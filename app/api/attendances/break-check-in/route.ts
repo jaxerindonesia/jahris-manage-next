@@ -37,9 +37,6 @@ export async function POST(req: NextRequest) {
     if (!userId) return jsonError("UserId is required", 400);
 
     const canManageAttendances = hasPermission(auth.user, "attendances", "update");
-    if (!canManageAttendances && userId !== auth.user.id) {
-      return jsonError("Forbidden", 403);
-    }
     const targetUserId = canManageAttendances ? userId : auth.user.id;
 
     const scopedTenantId = ensureTenantScope(auth.user);

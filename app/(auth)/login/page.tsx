@@ -189,7 +189,7 @@ export default function LoginPage() {
               )}
 
               {/* Login Form */}
-              <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-5">
+              <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-5" suppressHydrationWarning>
                 {/* Email Field */}
                 <div className="space-y-2 group">
                   <label
@@ -210,6 +210,7 @@ export default function LoginPage() {
                       required
                       value={formData.email}
                       onChange={handleChange}
+                      suppressHydrationWarning
                       className="block w-full rounded-xl border border-white/10 py-3.5 pl-12 pr-4 text-[16px]
                       bg-white/5 text-white
                       placeholder-gray-500
@@ -247,6 +248,7 @@ export default function LoginPage() {
                       required
                       value={formData.password}
                       onChange={handleChange}
+                      suppressHydrationWarning
                       className="block w-full rounded-xl border border-white/10 py-3.5 pl-12 pr-14 text-[16px]
                       bg-white/5 text-white
                       placeholder-gray-500

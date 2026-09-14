@@ -41,10 +41,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ message: imageValidation.message }, { status: 415 });
     }
 
-    if (!canManageAttendances && userId !== auth.user.id) {
-      return NextResponse.json({ message: "Forbidden" }, { status: 403 });
-    }
-
     const targetUserId = canManageAttendances ? userId : auth.user.id;
 
     const attendance = await prisma.attendance.findFirst({

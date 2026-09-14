@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { ensureTenantScope, requireSessionUser } from "@/lib/auth/tenant";
-import { requirePermission } from "@/lib/auth/permission";
+import { hasPermission } from "@/lib/auth/permission";
 
 type Params = {
   params: {
@@ -17,8 +17,12 @@ export async function GET(req: NextRequest, { params }: Params) {
   try {
     const auth = await requireSessionUser();
     if (auth.error) return auth.error;
-    const forbid = requirePermission(auth.user, "attendances", "get-all");
-    if (forbid) return forbid;
+    
+    const isOwnData = auth.user.id === p.id;
+    const canGetAll = hasPermission(auth.user, "attendances", "get-all");
+    if (!isOwnData && !canGetAll) {
+      return NextResponse.json({ message: "Forbidden" }, { status: 403 });
+    }
     const scopedTenantId = ensureTenantScope(auth.user);
     const { searchParams } = new URL(req.url);
     const page = Math.max(1, parseInt(searchParams.get("page") || "1"));
