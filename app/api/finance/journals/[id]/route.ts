@@ -2,6 +2,7 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { REIMBURSEMENT_JOURNAL_PREFIX } from "@/lib/helper/reimbursement-journal";
 import { ensureTenantScope, requireSessionUser } from "@/lib/auth/tenant";
 import { requirePermission } from "@/lib/auth/permission";
 import { writeAuditLog } from "@/lib/security/audit-log";
@@ -55,6 +56,9 @@ export async function PUT(req: NextRequest, context: Context) {
   const { id } = await context.params;
   const body = await req.json();
   const journalNo = String(body.journalNo || "").trim();
+  if (journalNo.startsWith(REIMBURSEMENT_JOURNAL_PREFIX)) {
+    return NextResponse.json({ message: "Ubah jurnal otomatis melalui reimbursement terkait." }, { status: 409 });
+  }
   const details = Array.isArray(body.details) ? body.details : [];
   const totals = calcTotals(details);
 
@@ -78,10 +82,14 @@ export async function PUT(req: NextRequest, context: Context) {
       id,
       ...(scopedTenantId ? { creator: { tenantId: scopedTenantId } } : {}),
     },
-    select: { id: true },
+    select: { id: true, journalNo: true },
   });
   if (!existing) {
     return NextResponse.json({ message: "Jurnal tidak ditemukan" }, { status: 404 });
+  }
+
+  if (existing.journalNo.startsWith(REIMBURSEMENT_JOURNAL_PREFIX)) {
+    return NextResponse.json({ message: "Ubah jurnal otomatis melalui reimbursement terkait." }, { status: 409 });
   }
 
   await prisma.journalDetail.deleteMany({ where: { journalId: id } });
@@ -140,10 +148,13 @@ export async function DELETE(_req: NextRequest, context: Context) {
       id,
       ...(scopedTenantId ? { creator: { tenantId: scopedTenantId } } : {}),
     },
-    select: { id: true },
+    select: { id: true, journalNo: true },
   });
   if (!existing) {
     return NextResponse.json({ message: "Jurnal tidak ditemukan" }, { status: 404 });
+  }
+  if (existing.journalNo.startsWith(REIMBURSEMENT_JOURNAL_PREFIX)) {
+    return NextResponse.json({ message: "Hapus jurnal otomatis melalui reimbursement terkait." }, { status: 409 });
   }
   await prisma.journal.delete({ where: { id } });
 

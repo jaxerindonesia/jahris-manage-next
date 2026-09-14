@@ -1,6 +1,8 @@
 export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
+import { lockReimbursementJournal, syncReimbursementJournal } from "@/lib/helper/reimbursement-journal";
 import prisma from "@/lib/prisma";
 import { ensureTenantScope, requireSessionUser } from "@/lib/auth/tenant";
 import { requirePermission } from "@/lib/auth/permission";
@@ -67,7 +69,7 @@ export async function PUT(req: Request, { params }: Params) {
 
     const contentType = req.headers.get("content-type") || "";
 
-    let updateData: any = {};
+    const updateData: Prisma.ReimbursementUncheckedUpdateInput = {};
     let removeReceipt = false;
     let newFile: File | null = null;
 
@@ -86,15 +88,15 @@ export async function PUT(req: Request, { params }: Params) {
       removeReceipt = formData.get("removeReceipt") === "true";
       newFile = formData.get("file") as File | null;
 
-      if (title !== null) updateData.title = title;
-      if (category !== null) updateData.category = category;
+      if (title !== null) updateData.title = String(title);
+      if (category !== null) updateData.category = String(category);
       if (amount !== null) updateData.amount = Number(amount);
       if (date !== null) updateData.date = new Date(date as string);
       if (bankName !== null) updateData.bankName = String(bankName).trim() || null;
       if (accountNumber !== null)
         updateData.accountNumber = String(accountNumber).trim() || null;
-      if (description !== null) updateData.description = description;
-      if (status !== null) updateData.status = status;
+      if (description !== null) updateData.description = String(description);
+      if (status !== null) updateData.status = String(status);
       if (approvedAt !== null)
         updateData.approvedAt = approvedAt
           ? new Date(approvedAt as string)
@@ -132,6 +134,24 @@ export async function PUT(req: Request, { params }: Params) {
         { message: "Data tidak ditemukan" },
         { status: 404 },
       );
+    }
+
+    if (typeof updateData.status === "string") {
+      updateData.status = updateData.status.toUpperCase();
+      if (!["PENDING", "APPROVED", "REJECTED"].includes(updateData.status)) {
+        return NextResponse.json({ message: "Status reimbursement tidak valid" }, { status: 400 });
+      }
+      if (updateData.status !== existing.status.toUpperCase()) {
+        const approvalForbid = requirePermission(auth.user, "reimbursements", "approve");
+        if (approvalForbid) return approvalForbid;
+      }
+      updateData.approvedAt = updateData.status === "PENDING" ? null : new Date();
+    }
+    if (typeof updateData.amount === "number" && (!Number.isFinite(updateData.amount) || updateData.amount <= 0)) {
+      return NextResponse.json({ message: "Nominal harus lebih dari nol" }, { status: 400 });
+    }
+    if (updateData.date instanceof Date && Number.isNaN(updateData.date.getTime())) {
+      return NextResponse.json({ message: "Tanggal tidak valid" }, { status: 400 });
     }
 
     let receiptUrl = existing.receiptUrl;
@@ -180,9 +200,11 @@ export async function PUT(req: Request, { params }: Params) {
 
     updateData.receiptUrl = receiptUrl;
 
-    const updated = await prisma.reimbursement.update({
-      where: { id: p.id },
-      data: updateData,
+    const updated = await prisma.$transaction(async (tx) => {
+      await lockReimbursementJournal(tx, existing.tenantId);
+      const claim = await tx.reimbursement.update({ where: { id: p.id }, data: updateData });
+      await syncReimbursementJournal(tx, claim);
+      return claim;
     });
 
     if (action === "approve") {
@@ -229,7 +251,6 @@ export async function DELETE(_: Request, { params }: Params) {
 
     const existing = await prisma.reimbursement.findFirst({
       where: { id: p.id, ...(scopedTenantId ? { tenantId: scopedTenantId } : {}) },
-      select: { id: true, receiptUrl: true },
     });
     if (!existing) return NextResponse.json({ message: "Reimbursement not found" }, { status: 404 });
 
@@ -237,7 +258,11 @@ export async function DELETE(_: Request, { params }: Params) {
       await deleteFromMinio(existing.receiptUrl);
     }
 
-    await prisma.reimbursement.delete({ where: { id: p.id } });
+    await prisma.$transaction(async (tx) => {
+      await lockReimbursementJournal(tx, existing.tenantId);
+      await syncReimbursementJournal(tx, { ...existing, status: "REJECTED" });
+      await tx.reimbursement.delete({ where: { id: p.id } });
+    });
     return NextResponse.json({ message: "Reimbursement successfully deleted" });
   } catch (error) {
     return NextResponse.json(

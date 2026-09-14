@@ -1,6 +1,5 @@
 import FinanceDashboardPage from "./components/finance-dashboard-page";
 import type { AccountCategoryDto } from "@/lib/dto/finance-account-category";
-import { getOrSetRedisJsonCache } from "@/lib/cache/redis";
 import { requirePermission } from "@/lib/auth/permission";
 import { ensureTenantScope, requireSessionUser } from "@/lib/auth/tenant";
 import prisma from "@/lib/prisma";
@@ -45,10 +44,7 @@ export default async function FinanceDashboardRoute() {
   const forbid = requirePermission(auth.user, "finance", "get-all");
   if (forbid) return forbid;
   const scopedTenantId = ensureTenantScope(auth.user);
-  const summary = await getOrSetRedisJsonCache(
-    `finance-dashboard:${scopedTenantId ?? "global"}:${auth.user.id}`,
-    60,
-    async () => {
+  const summary = await (async () => {
       const accountWhere = scopedTenantId ? { tenantId: scopedTenantId } : {};
       const journalWhere = scopedTenantId
         ? { creator: { tenantId: scopedTenantId } }
@@ -135,7 +131,7 @@ export default async function FinanceDashboardRoute() {
 
       const cashBankBalance = getAccountBalanceByMatch([/cash/i, /bank/i, /kas/i, /petty cash/i], ["1"]);
       const receivableBalance = getAccountBalanceByMatch([/receivable/i, /piutang/i], ["1"]);
-      const payableBalance = getAccountBalanceByMatch([/payable/i, /utang/i], ["2"]);
+      const payableBalance = -getAccountBalanceByMatch([/payable/i, /utang/i], ["2"]);
       const revenueBalance = accounts.reduce((sum, account) => {
         if ((account.accountCategory?.code ?? "") !== "4") return sum;
         return sum + (accountBalanceMap.get(account.id) ?? 0);
@@ -195,8 +191,7 @@ export default async function FinanceDashboardRoute() {
           total: item._count.status,
         })),
       };
-    },
-  );
+    })();
 
   return <FinanceDashboardPage summary={summary} />;
 }

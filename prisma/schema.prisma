@@ -368,6 +368,7 @@ model AttendanceConfig {
   officeEndTime           String   @map("office_end_time")
   lateToleranceMinutes    Int      @map("late_tolerance_minutes")
   lateDeductionAmount     Float    @default(0) @map("late_deduction_amount")
+  overtimeThresholdHours  Float    @default(2) @map("overtime_threshold_hours")
   breakEnabled            Boolean  @default(false) @map("break_enabled")
   breakFaceCaptureEnabled Boolean  @default(false) @map("break_face_capture_enabled")
   createdAt               DateTime @default(now()) @map("created_at")

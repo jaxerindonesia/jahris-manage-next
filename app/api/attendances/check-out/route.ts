@@ -9,6 +9,7 @@ import { hasPermission } from "@/lib/auth/permission";
 import { buildTenantStorageObjectName } from "@/lib/helper/storage";
 import { validateBase64Image } from "@/lib/security/file-validation";
 import { haversineKm } from "@/lib/helper/attendance";
+import { getAttendanceOvertime } from "@/lib/helper/attendance-overtime";
 
 export async function POST(req: NextRequest) {
   try {
@@ -146,9 +147,17 @@ export async function POST(req: NextRequest) {
       });
     });
 
+    let overtimeSuggestion = null;
+    if (targetUserId === auth.user.id && hasPermission(auth.user, "overtimes", "create")) {
+      const config = await prisma.attendanceConfig.findFirst({ where: { tenantId: updated.tenantId }, orderBy: { updatedAt: "desc" } });
+      const linked = await prisma.overtime.findUnique({ where: { attendanceId: updated.id }, select: { id: true } });
+      if (!linked) overtimeSuggestion = getAttendanceOvertime(updated, config?.overtimeThresholdHours ?? 2);
+    }
+
     return NextResponse.json({
       message: "Check Out successful",
       data: updated,
+      overtimeSuggestion,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to check out";
