@@ -43,6 +43,9 @@ export default function FaceRecognitionModal({
   onSuccess,
   onClose,
 }: FaceRecognitionModalProps) {
+  const [retryCount, setRetryCount] = useState(0);
+  const onSuccessRef = useRef(onSuccess);
+  useEffect(() => { onSuccessRef.current = onSuccess; }, [onSuccess]);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<ReturnType<typeof createFaceOverlay> | null>(null);
@@ -76,6 +79,10 @@ export default function FaceRecognitionModal({
   });
 
   const stopCamera = useCallback(() => {
+    if (videoRef.current) {
+      videoRef.current.pause();
+      videoRef.current.srcObject = null;
+    }
     overlayRef.current?.stop();
     overlayRef.current = null;
     if (timeoutRef.current) {
@@ -157,6 +164,7 @@ export default function FaceRecognitionModal({
 
   useEffect(() => {
     if (modelsLoaded) return;
+    let cancelled = false;
     const load = async () => {
       try {
         await ensureFaceModelLoaded("attendance-recognition", [
@@ -164,19 +172,53 @@ export default function FaceRecognitionModal({
           () => faceapi.nets.faceLandmark68Net.loadFromUri("/models"),
           () => faceapi.nets.faceRecognitionNet.loadFromUri("/models"),
         ]);
-        setModelsLoaded(true);
+        if (!cancelled) setModelsLoaded(true);
       } catch {
-        setStatus("error");
+        if (!cancelled) setStatus("error");
       }
     };
     load();
-  }, [modelsLoaded]);
+    return () => { cancelled = true; };
+  }, [modelsLoaded, retryCount]);
 
   useEffect(() => {
     if (!isOpen) return;
     if (!modelsLoaded) return;
 
     let cancelled = false;
+    let lastProgressAt = performance.now();
+    let lastVideoTime = -1;
+    let lastFrameAt = performance.now();
+    let cameraStarted = false;
+    const watchdog = window.setInterval(() => {
+      if (cancelled || successCalledRef.current || document.hidden) return;
+      const video = videoRef.current;
+      const now = performance.now();
+      if (video && video.currentTime !== lastVideoTime) {
+        lastVideoTime = video.currentTime;
+        lastFrameAt = now;
+      }
+      const frozen = cameraStarted && now - lastFrameAt > 8000;
+      if (now - lastProgressAt > 20000 || frozen) {
+        cancelled = true;
+        stopCamera();
+        setStatus(frozen ? "no-camera" : "error");
+      }
+    }, 1000);
+    const resumeCamera = () => {
+      lastProgressAt = performance.now();
+      lastFrameAt = performance.now();
+      if (!document.hidden && !cancelled && streamRef.current) {
+        void videoRef.current?.play().catch(() => {
+          if (!cancelled) {
+            cancelled = true;
+            stopCamera();
+            setStatus("no-camera");
+          }
+        });
+      }
+    };
+    document.addEventListener("visibilitychange", resumeCamera);
 
     const run = async () => {
       const referenceKey = referenceImageUrl ?? "stored-descriptor";
@@ -201,6 +243,7 @@ export default function FaceRecognitionModal({
           : "image" as const;
 
       if (!referenceDescriptorRef.current && !referenceImageUrl) {
+        window.clearInterval(watchdog);
         setStatus("no-reference");
         return;
       }
@@ -209,9 +252,10 @@ export default function FaceRecognitionModal({
         if (referenceDescriptorRef.current || !referenceImageUrl) return;
         setStatus("loading-reference");
         try {
-          referenceDescriptorRef.current = await loadAndCacheFaceDescriptor(referenceImageUrl);
+          const descriptor = await loadAndCacheFaceDescriptor(referenceImageUrl);
+          if (!cancelled) referenceDescriptorRef.current = descriptor;
         } catch {
-          referenceDescriptorRef.current = null;
+          if (!cancelled) referenceDescriptorRef.current = null;
         }
       };
 
@@ -234,31 +278,23 @@ export default function FaceRecognitionModal({
 
           streamRef.current = stream;
 
-          const videoTrack = stream.getVideoTracks()[0];
-          if (videoTrack && typeof videoTrack.getCapabilities === "function") {
-            const capabilities = videoTrack.getCapabilities() as MediaTrackCapabilities & {
-              zoom?: { min: number; max: number; step: number };
-            };
-            const minimumZoom = capabilities.zoom?.min;
-
-            if (typeof minimumZoom === "number" && Number.isFinite(minimumZoom)) {
-              try {
-                await videoTrack.applyConstraints({
-                  advanced: [{ zoom: minimumZoom } as MediaTrackConstraintSet],
-                });
-              } catch {
-                // Keep the camera's default zoom when the device rejects the constraint.
-              }
-            }
-          }
-
-          if (videoRef.current) {
-            videoRef.current.srcObject = stream;
-            await videoRef.current.play();
-          }
+          const video = videoRef.current;
+          if (!video) throw new Error("Camera preview unavailable");
+          video.muted = true;
+          video.playsInline = true;
+          video.srcObject = stream;
+          await video.play();
+          if (cancelled) return null;
+          cameraStarted = true;
+          lastFrameAt = performance.now();
+          lastProgressAt = performance.now();
           return performance.now() - startedAt;
         } catch {
-          if (!cancelled) setStatus("no-camera");
+          if (!cancelled) {
+            window.clearInterval(watchdog);
+            stopCamera();
+            setStatus("no-camera");
+          }
           return null;
         }
       };
@@ -271,6 +307,7 @@ export default function FaceRecognitionModal({
       if (cancelled) return;
 
       if (!referenceDescriptorRef.current) {
+        window.clearInterval(watchdog);
         setStatus("no-reference");
         stopCamera();
         reportFacePerformance({
@@ -302,6 +339,7 @@ export default function FaceRecognitionModal({
       const scanCanvas = document.createElement("canvas");
       const scanContext = scanCanvas.getContext("2d");
       let lastIdentityCheckAt = -Infinity;
+      let noFaceSince: number | null = null;
       const detectFrame = async () => {
         if (!videoRef.current || cancelled || successCalledRef.current) return;
         const frameStartedAt = performance.now();
@@ -311,7 +349,7 @@ export default function FaceRecognitionModal({
           const delay = Math.max(0, 33 - (performance.now() - frameStartedAt));
           timeoutRef.current = setTimeout(() => void detectFrame(), delay);
         };
-        if (videoRef.current.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+        if (document.hidden || videoRef.current.paused || !videoRef.current.videoWidth || !videoRef.current.videoHeight || videoRef.current.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
           scheduleNextFrame();
           return;
         }
@@ -328,11 +366,15 @@ export default function FaceRecognitionModal({
           detection = await faceapi
             .detectSingleFace(
               scanCanvas,
-              new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.3 }),
+              new faceapi.TinyFaceDetectorOptions({
+                inputSize: consecutiveNoFaceRef.current >= 3 ? 416 : 224,
+                scoreThreshold: 0.3,
+              }),
             )
             .withFaceLandmarks();
         } catch {
           if (!cancelled) {
+            window.clearInterval(watchdog);
             setStatus("error");
             stopCamera();
           }
@@ -340,6 +382,7 @@ export default function FaceRecognitionModal({
         }
         if (cancelled || successCalledRef.current) return;
 
+        lastProgressAt = performance.now();
         overlayRef.current?.update(detection ? {
           points: detection.landmarks.positions.map(({ x, y }) => ({ x, y })),
           box: detection.detection.box,
@@ -347,7 +390,8 @@ export default function FaceRecognitionModal({
 
         if (!detection) {
           consecutiveNoFaceRef.current += 1;
-          if (consecutiveNoFaceRef.current > 30) {
+          noFaceSince ??= performance.now();
+          if (performance.now() - noFaceSince > 1500) {
             faceMatchedRef.current = false;
             turnedLeftDoneRef.current = false;
             turnedRightDoneRef.current = false;
@@ -359,6 +403,7 @@ export default function FaceRecognitionModal({
         }
 
         consecutiveNoFaceRef.current = 0;
+        noFaceSince = null;
 
         if (!referenceDescriptorRef.current) {
           if (!cancelled) setStatus("no-reference");
@@ -384,6 +429,7 @@ export default function FaceRecognitionModal({
             );
           } catch {
             if (!cancelled) {
+              window.clearInterval(watchdog);
               setStatus("error");
               stopCamera();
             }
@@ -420,7 +466,7 @@ export default function FaceRecognitionModal({
         // PHASE 2: LIVENESS (HEAD TURN)
         // Ultra-fast: Only tracks landmarks, NO descriptor blocking!
         // ==========================================
-        if (!cancelled && status !== "head-turn-required") {
+        if (!cancelled) {
           setStatus("head-turn-required");
         }
 
@@ -470,7 +516,7 @@ export default function FaceRecognitionModal({
               setStatus("error");
               return;
             }
-            onSuccess(captureDataUrl);
+            onSuccessRef.current(captureDataUrl);
           }, 300);
         }
       };
@@ -482,9 +528,11 @@ export default function FaceRecognitionModal({
 
     return () => {
       cancelled = true;
+      window.clearInterval(watchdog);
+      document.removeEventListener("visibilitychange", resumeCamera);
       cleanup();
     };
-  }, [isOpen, mode, modelsLoaded, referenceDescriptor, referenceImageUrl, onSuccess, cleanup, getCaptureDataUrl, stopCamera]);
+  }, [isOpen, mode, modelsLoaded, referenceDescriptor, referenceImageUrl, retryCount, cleanup, getCaptureDataUrl, stopCamera]);
 
   if (!isOpen) return null;
 
@@ -538,7 +586,7 @@ export default function FaceRecognitionModal({
       icon: <CheckCircle className="w-5 h-5" />,
     },
     error: {
-      label: "Gagal memuat model AI",
+      label: "Pemindaian terhenti. Silakan coba lagi",
       color: "text-red-400",
       icon: <XCircle className="w-5 h-5" />,
     },
@@ -580,7 +628,8 @@ export default function FaceRecognitionModal({
         <div className="relative aspect-[4/5] overflow-hidden bg-black sm:aspect-[4/3]">
           <video
             ref={videoRef}
-            className="h-full w-full -scale-x-100 object-contain object-center"
+            className="absolute inset-0 h-full w-full -scale-x-100 object-contain object-center"
+            autoPlay
             muted
             playsInline
           />
@@ -667,6 +716,17 @@ export default function FaceRecognitionModal({
         </div>
 
         <div className="px-4 sm:px-5 py-3 sm:py-4 flex flex-col sm:flex-row gap-2 sm:gap-3">
+          {(status === "no-camera" || status === "error" || status === "no-face") && (
+            <Button
+              className="w-full sm:flex-1"
+              onClick={() => {
+                cleanup();
+                setRetryCount((count) => count + 1);
+              }}
+            >
+              Coba lagi
+            </Button>
+          )}
           <Button
             variant="ghost"
             className="w-full sm:flex-1 text-gray-400 hover:text-white hover:bg-gray-700 text-xs sm:text-sm h-9 sm:h-10"
