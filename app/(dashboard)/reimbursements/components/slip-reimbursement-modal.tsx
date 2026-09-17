@@ -29,6 +29,7 @@ export default function SlipReimbursementModal({ open = true, ...props }: SlipRe
 }
 
 function SlipReimbursementContent({ detailItem, onClose, loading = false }: SlipReimbursementModalProps) {
+  const [photoLayout, setPhotoLayout] = useState<"two" | "one">("two");
   const [tenantConfig] = useState<TenantConfig | null>(() => {
     try {
       const raw = localStorage.getItem("hr_user_data");
@@ -50,6 +51,11 @@ function SlipReimbursementContent({ detailItem, onClose, loading = false }: Slip
     const printWindow = window.open("", "_blank", "width=1200,height=900");
     if (!printWindow) { window.print(); return; }
 
+    const isTwoPerPage = photoLayout === "two";
+    const maxPhotoHeight = isTwoPerPage ? "125mm" : "200mm";
+    const pageMargin = isTwoPerPage ? "8mm 12mm" : "12mm 14mm";
+    const groupMargin = isTwoPerPage ? "12px" : "20px";
+
     printWindow.document.open();
     printWindow.document.write(`<!DOCTYPE html>
 <html>
@@ -57,7 +63,7 @@ function SlipReimbursementContent({ detailItem, onClose, loading = false }: Slip
   <title>Bukti Reimbursement</title>
   <meta charset="utf-8" />
   <style>
-    @page { size: A4 portrait; margin: 12mm 14mm; }
+    @page { size: A4 portrait; margin: ${pageMargin}; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: Arial, Helvetica, sans-serif;
@@ -146,12 +152,12 @@ function SlipReimbursementContent({ detailItem, onClose, loading = false }: Slip
     .footer-note { margin-top: 14px; text-align: center; font-size: 7pt; color: #9ca3af; }
 
     /* ─── Lampiran Foto ─── */
-    .lampiran-section { padding: 16px 24px; page-break-before: always; break-before: page; }
-    .lampiran-title { font-size: 13pt; font-weight: 700; color: #111827; margin-bottom: 2px; }
-    .lampiran-sub { font-size: 8pt; color: #6b7280; margin-bottom: 16px; }
+    .lampiran-section { padding: ${isTwoPerPage ? "10mm 16px" : "16px 24px"}; page-break-before: always; break-before: page; }
+    .lampiran-title { font-size: ${isTwoPerPage ? "11pt" : "13pt"}; font-weight: 700; color: #111827; margin-bottom: 2px; }
+    .lampiran-sub { font-size: 7.5pt; color: #6b7280; margin-bottom: ${isTwoPerPage ? "8px" : "16px"}; }
 
     /* Per expense group */
-    .expense-group { margin-bottom: 20px; }
+    .expense-group { margin-bottom: ${groupMargin}; }
     .expense-group-bar {
       display: flex;
       align-items: center;
@@ -159,8 +165,8 @@ function SlipReimbursementContent({ detailItem, onClose, loading = false }: Slip
       background: #f9fafb;
       border: 1px solid #e5e7eb;
       border-radius: 6px;
-      padding: 6px 12px;
-      margin-bottom: 10px;
+      padding: ${isTwoPerPage ? "4px 10px" : "6px 12px"};
+      margin-bottom: ${isTwoPerPage ? "6px" : "10px"};
     }
     .expense-badge {
       background: #1d4ed8 !important;
@@ -173,25 +179,60 @@ function SlipReimbursementContent({ detailItem, onClose, loading = false }: Slip
       border-radius: 4px;
       padding: 2px 7px;
     }
-    .expense-date { font-size: 9pt; color: #374151; }
-    .expense-amount { font-size: 9pt; font-weight: 700; color: #111827; margin-left: auto; }
+    .expense-date { font-size: 8.5pt; color: #374151; }
+    .expense-amount { font-size: 8.5pt; font-weight: 700; color: #111827; margin-left: auto; }
+
+    /* Photo grid: 2 Kolom Kanan-Kiri */
+    .photo-grid {
+      display: grid !important;
+      grid-template-columns: ${isTwoPerPage ? "repeat(2, 1fr)" : "1fr"} !important;
+      gap: 10px !important;
+      align-items: start !important;
+    }
 
     /* Photo card */
-    .photo-card { border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; margin-bottom: 14px; page-break-inside: avoid; break-inside: avoid; }
-    .photo-card-header { background: #f9fafb; border-bottom: 1px solid #e5e7eb; padding: 5px 12px; font-size: 7pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: #6b7280; }
-    .photo-card-body { padding: 10px; text-align: center; background: #fff; }
-    /* KEY FIX: Natural aspect ratio, not distorted */
+    .photo-card {
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      overflow: hidden;
+      margin-bottom: 0;
+      page-break-inside: avoid !important;
+      break-inside: avoid !important;
+      background: #fff;
+      display: flex;
+      flex-direction: column;
+    }
+    .photo-card-header {
+      background: #f9fafb;
+      border-bottom: 1px solid #e5e7eb;
+      padding: 4px 10px;
+      font-size: 7pt;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #4b5563;
+    }
+    .photo-card-body {
+      padding: 6px;
+      text-align: center;
+      background: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex: 1;
+    }
+    /* Natural aspect ratio, fitted nicely inside 2-column grid */
     .photo-card-body img {
       display: block;
       margin: 0 auto;
       max-width: 100%;
       width: auto;
       height: auto;
-      max-height: 200mm;
+      max-height: ${maxPhotoHeight};
       object-fit: contain;
       border-radius: 4px;
     }
-    .photo-error { padding: 20px; text-align: center; color: #9ca3af; font-size: 8pt; background: #f9fafb; border-radius: 4px; }
+    .photo-error { padding: 15px; text-align: center; color: #9ca3af; font-size: 8pt; background: #f9fafb; border-radius: 4px; }
   </style>
 </head>
 <body>
@@ -219,19 +260,47 @@ function SlipReimbursementContent({ detailItem, onClose, loading = false }: Slip
     <div className="no-print fixed inset-0 z-[9999] flex items-center justify-center">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
 
-      <div className="relative mx-4 max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white shadow-2xl animate-in zoom-in-95 slide-in-from-bottom-4 duration-300 dark:bg-gray-900">
-        <div className="flex items-center justify-between border-b p-6 dark:border-gray-700">
+      <div className="relative mx-4 max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white shadow-2xl animate-in zoom-in-95 slide-in-from-bottom-4 duration-300 dark:bg-gray-900">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b p-6 dark:border-gray-700">
           <div>
             <h2 className="text-xl font-bold text-gray-900 dark:text-white">Bukti Reimbursement</h2>
             <p className="mt-0.5 text-sm text-gray-500 dark:text-gray-400">Dokumen klaim pengeluaran karyawan</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Toggle 2 Kolom Kanan-Kiri vs 1 Kolom Penuh */}
+            <div className="flex items-center rounded-lg bg-gray-100 p-0.5 dark:bg-gray-800">
+              <button
+                type="button"
+                onClick={() => setPhotoLayout("two")}
+                className={`rounded-md px-2.5 py-1.5 text-xs font-medium transition-all ${
+                  photoLayout === "two"
+                    ? "bg-white text-blue-600 shadow-sm dark:bg-gray-700 dark:text-blue-400"
+                    : "text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
+                }`}
+                title="2 Foto berdampingan (kanan-kiri) per baris"
+              >
+                2 Foto Kanan-Kiri
+              </button>
+              <button
+                type="button"
+                onClick={() => setPhotoLayout("one")}
+                className={`rounded-md px-2.5 py-1.5 text-xs font-medium transition-all ${
+                  photoLayout === "one"
+                    ? "bg-white text-blue-600 shadow-sm dark:bg-gray-700 dark:text-blue-400"
+                    : "text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
+                }`}
+                title="1 Foto per baris penuh"
+              >
+                1 Kolom Penuh
+              </button>
+            </div>
+
             <button
               onClick={handlePrint}
               className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
             >
               <Printer className="h-4 w-4" />
-              Cetak / Download PDF
+              Cetak / PDF
             </button>
             <button
               onClick={onClose}
@@ -248,7 +317,7 @@ function SlipReimbursementContent({ detailItem, onClose, loading = false }: Slip
               {loading ? "Memuat detail reimbursement..." : "Data reimbursement tidak ditemukan."}
             </div>
           ) : (
-            <SlipContent reimbursement={detailItem} tenantConfig={tenantConfig} />
+            <SlipContent reimbursement={detailItem} tenantConfig={tenantConfig} photoLayout={photoLayout} />
           )}
         </div>
       </div>
@@ -259,9 +328,11 @@ function SlipReimbursementContent({ detailItem, onClose, loading = false }: Slip
 function SlipContent({
   reimbursement,
   tenantConfig,
+  photoLayout = "two",
 }: {
   reimbursement: ReimbursementDto;
   tenantConfig?: TenantConfig | null;
+  photoLayout?: "two" | "one";
 }) {
   const generatedAtLabel = new Date().toLocaleString("id-ID", {
     day: "numeric", month: "long", year: "numeric",
@@ -477,20 +548,32 @@ function SlipContent({
                   <span className="expense-amount ml-auto text-sm font-semibold text-gray-900">{formatCurrency(detail.amount)}</span>
                 </div>
 
-                {/* Foto — stacked vertikal, natural aspect ratio */}
-                <div className="flex flex-col gap-4">
+                {/* Foto — 2 kolom (kanan - kiri) berdampingan */}
+                <div
+                  className={`photo-grid ${
+                    photoLayout === "one"
+                      ? "grid grid-cols-1 gap-4"
+                      : "grid grid-cols-1 gap-3 sm:grid-cols-2"
+                  }`}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns:
+                      photoLayout === "one" ? "1fr" : "repeat(2, minmax(0, 1fr))",
+                    gap: "12px",
+                  }}
+                >
                   {urls.map((url, fIdx) => (
                     <div
                       key={`${url}-${fIdx}`}
-                      className="photo-card overflow-hidden rounded-xl border border-gray-200 shadow-sm"
+                      className="photo-card overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm flex flex-col"
                       style={{ pageBreakInside: "avoid", breakInside: "avoid" }}
                     >
-                      <div className="photo-card-header border-b border-gray-100 bg-gray-50 px-3 py-1.5">
-                        <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+                      <div className="photo-card-header border-b border-gray-100 bg-gray-50 px-3 py-1.5 flex items-center justify-between">
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
                           Foto Bukti {fIdx + 1}
                         </span>
                       </div>
-                      <div className="photo-card-body p-3 text-center">
+                      <div className="photo-card-body p-2 flex items-center justify-center flex-1">
                         <img
                           src={url}
                           alt={`Bukti ${dIdx + 1} - Foto ${fIdx + 1}`}
@@ -499,8 +582,9 @@ function SlipContent({
                             maxWidth: "100%",
                             width: "auto",
                             height: "auto",
+                            maxHeight: photoLayout === "two" ? "300px" : "480px",
                             objectFit: "contain",
-                            borderRadius: "6px",
+                            borderRadius: "4px",
                             display: "block",
                           }}
                           onError={(e) => {
