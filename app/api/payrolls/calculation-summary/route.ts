@@ -17,6 +17,8 @@ export async function GET(req: NextRequest) {
     const userId = String(searchParams.get("userId") || "").trim();
     const month = Number(searchParams.get("month") || 0);
     const year = Number(searchParams.get("year") || 0);
+    const startDate = searchParams.get("startDate") || null;
+    const endDate = searchParams.get("endDate") || null;
 
     if (!userId || month < 1 || month > 12 || year < 1) {
       return NextResponse.json(
@@ -31,12 +33,16 @@ export async function GET(req: NextRequest) {
       userId,
       month,
       year,
+      startDate,
+      endDate,
     });
     const overtime = await getApprovedOvertimePayoutSummary({
       tenantId: salary.tenantId,
       userId,
       month,
       year,
+      startDate,
+      endDate,
     });
 
     return NextResponse.json({

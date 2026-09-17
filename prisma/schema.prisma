@@ -575,11 +575,27 @@ model Reimbursement {
   tenantId        String?   @map("tenant_id") @db.Uuid
   tenant          Tenant?   @relation(fields: [tenantId], references: [id])
   user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  details         ReimbursementDetail[]
 
   @@index([tenantId])
   @@index([userId])
   @@index([referenceNumber])
   @@map("reimbursements")
+}
+
+model ReimbursementDetail {
+  id              String        @id @default(uuid()) @db.Uuid
+  reimbursementId String        @map("reimbursement_id") @db.Uuid
+  position        Int
+  category        String
+  amount          Float
+  date            DateTime
+  receiptUrl      String?       @map("receipt_url")
+  receiptUrls     String[]      @default([]) @map("receipt_urls")
+  reimbursement   Reimbursement @relation(fields: [reimbursementId], references: [id], onDelete: Cascade)
+
+  @@unique([reimbursementId, position])
+  @@map("reimbursement_details")
 }
 
 model PettyCash {

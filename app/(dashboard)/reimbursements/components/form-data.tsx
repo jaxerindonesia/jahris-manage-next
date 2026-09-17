@@ -1,455 +1,142 @@
-"use client";
+﻿"use client";
 
-import { ReimbursementDto } from "@/lib/dto/reimbursement";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
+import { Plus } from "lucide-react";
 import { toast } from "sonner";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Upload, FileText } from "lucide-react";
-import { parseApiError } from "@/lib/helper/response-api";
 import EmployeeSearchSelect from "@/components/employee-search-select";
+import type { ReimbursementDto } from "@/lib/dto/reimbursement";
+import { formatDateInputValue } from "@/lib/helper/date";
+import { formatCurrency } from "@/lib/helper/format-currency";
+import { getReimbursementDetails, getReceiptUrls } from "@/lib/helper/reimbursement";
+import { saveReimbursement } from "../actions";
+import type { ReimbursementDetailForm, ReimbursementForm } from "../types";
+import ExpenseRow from "./expense-row";
 
-const CATEGORIES = [
-  "Transportasi",
-  "Akomodasi",
-  "Makan & Minum",
-  "Kesehatan",
-  "Peralatan Kerja",
-  "Komunikasi",
-  "Lainnya",
-];
+function emptyDetail(): ReimbursementDetailForm {
+  return { key: `${Date.now()}-${Math.random()}`, category: "", amount: 0, date: "", receiptUrls: [], files: [] };
+}
 
-export default function ReimbursementFormData({
-  isOpen,
-  initialData,
-  onClose,
-  onSuccess,
-}: {
+export default function ReimbursementFormData({ isOpen, initialData, onClose, onSuccess }: {
   isOpen: boolean;
   initialData?: ReimbursementDto;
   onClose: () => void;
   onSuccess: () => void;
 }) {
+  if (!isOpen) return null;
+  return <ReimbursementFormContent initialData={initialData} onClose={onClose} onSuccess={onSuccess} />;
+}
+
+function ReimbursementFormContent({ initialData, onClose, onSuccess }: {
+  initialData?: ReimbursementDto;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
   const [loading, setLoading] = useState(false);
-  const [userData, setUserData] = useState({ id: "", role: "" });
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(
-    initialData?.receiptUrl ?? null,
-  );
-  const [isReceiptRemoved, setIsReceiptRemoved] = useState(false);
-  const [fileError, setFileError] = useState("");
-
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const [formData, setFormData] = useState<ReimbursementDto>(
-    initialData || {
-      userId: "",
-      title: "",
-      category: "",
-      amount: 0,
-      date: "",
-      bankName: "",
-      accountNumber: "",
-      description: "",
-      receiptUrl: null,
-      status: "PENDING",
-    },
-  );
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (file.size > 5 * 1024 * 1024) {
-      const message = "Ukuran file maksimal 5MB";
-      setFileError(message);
-      toast.error(message);
-      e.target.value = "";
-      return;
-    }
-
-    const allowedTypes = [
-      "image/jpeg",
-      "image/png",
-      "image/webp",
-      "application/pdf",
-    ];
-
-    if (!allowedTypes.includes(file.type)) {
-      const message = "Format file tidak didukung";
-      setFileError(message);
-      toast.error(message);
-      e.target.value = "";
-      return;
-    }
-
-    // revoke old blob if exists
-    if (previewUrl && previewUrl.startsWith("blob:")) {
-      URL.revokeObjectURL(previewUrl);
-    }
-
-    setSelectedFile(file);
-    setIsReceiptRemoved(false);
-    setFileError("");
-
-    if (file.type.startsWith("image/")) {
-      setPreviewUrl(URL.createObjectURL(file));
-    } else {
-      setPreviewUrl("pdf");
-    }
+  const [user] = useState<{ id?: string; role?: string }>(() => {
+    try { return JSON.parse(localStorage.getItem("hr_user_data") || "{}"); }
+    catch { return {}; }
+  });
+  const isEmployee = user.role?.toLowerCase().replace(/\s/g, "") === "karyawan";
+  const [form, setForm] = useState<ReimbursementForm>(() => ({
+    id: initialData?.id,
+    userId: initialData?.userId || (isEmployee ? user.id || "" : ""),
+    title: initialData?.title || "",
+    bankName: initialData?.bankName || "",
+    accountNumber: initialData?.accountNumber || "",
+    description: initialData?.description || "",
+    details: initialData ? getReimbursementDetails(initialData).map((detail, index) => ({
+      ...detail, key: detail.id || `existing-${index}`, date: formatDateInputValue(detail.date), receiptUrls: getReceiptUrls(detail), files: [],
+    })) : [emptyDetail()],
+  }));
+  const total = Math.round(form.details.reduce((sum, detail) => sum + detail.amount, 0) * 100) / 100;
+  const updateDetail = (key: string, changes: Partial<ReimbursementDetailForm>) => {
+    setForm((current) => ({ ...current, details: current.details.map((detail) => detail.key === key ? { ...detail, ...changes } : detail) }));
   };
-
-  const removeReceipt = () => {
-    if (previewUrl && previewUrl.startsWith("blob:")) {
-      URL.revokeObjectURL(previewUrl);
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!form.userId) return toast.error("Pilih karyawan terlebih dahulu");
+    if (form.details.some((detail) => !detail.category || !detail.date || detail.amount <= 0)) {
+      return toast.error("Lengkapi kategori, nominal, dan tanggal pada setiap rincian");
     }
-
-    setSelectedFile(null);
-    setPreviewUrl(null);
-    setIsReceiptRemoved(true);
-    setFileError("");
-
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
     setLoading(true);
-
     try {
-      if (selectedFile && selectedFile.size > 5 * 1024 * 1024) {
-        const message = "Ukuran file maksimal 5MB";
-        setFileError(message);
-        toast.error(message);
-        return;
-      }
-
-      const fd = new FormData();
-
-      fd.append("userId", formData.userId || "");
-      fd.append("title", formData.title);
-      fd.append("category", formData.category);
-      fd.append("amount", String(formData.amount));
-      fd.append("date", formData.date);
-      fd.append("bankName", formData.bankName || "");
-      fd.append("accountNumber", formData.accountNumber || "");
-      fd.append("description", formData.description || "");
-      fd.append("status", formData.status || "PENDING");
-
-      if (formData.id) {
-        fd.append("id", formData.id);
-      }
-
-      if (selectedFile) {
-        fd.append("file", selectedFile);
-      }
-
-      if (isReceiptRemoved && !selectedFile) {
-        fd.append("removeReceipt", "true");
-      }
-
-      const url = formData.id
-        ? `/api/reimbursements/${formData.id}`
-        : "/api/reimbursements";
-
-      const res = await fetch(url, {
-        method: formData.id ? "PUT" : "POST",
-        body: fd,
-      });
-
-      if (!res.ok) throw new Error(await parseApiError(res, "Gagal menyimpan data"));
-
-      toast.success(
-        `Reimbursement berhasil ${formData.id ? "diupdate" : "disimpan"}!`,
-      );
-
+      await saveReimbursement(form);
+      toast.success(`Reimbursement berhasil ${form.id ? "diupdate" : "disimpan"}!`);
       onSuccess();
       onClose();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Terjadi kesalahan");
-    } finally {
-      setLoading(false);
-    }
+      toast.error(error instanceof Error ? error.message : "Gagal menyimpan reimbursement");
+    } finally { setLoading(false); }
   };
 
-  useEffect(() => {
-    const data = JSON.parse(localStorage.getItem("hr_user_data") || "{}");
-    setUserData(data);
-  }, []);
-
-  useEffect(() => {
-    if (userData.role && userData.role === "Karyawan") {
-      setFormData((prev) => ({
-        ...prev,
-        userId: userData.id,
-      }));
-    }
-  }, [userData]);
-
-  useEffect(() => {
-    if (initialData) {
-      setFormData(initialData);
-      setFileError("");
-      return;
-    }
-
-    setFormData({
-      userId: "",
-      title: "",
-      category: "",
-      amount: 0,
-      date: "",
-      bankName: "",
-      accountNumber: "",
-      description: "",
-      receiptUrl: null,
-      status: "PENDING",
-    });
-    setFileError("");
-  }, [initialData]);
-
-  const isPdf =
-    previewUrl === "pdf" ||
-    (!selectedFile && formData.receiptUrl?.toLowerCase().endsWith(".pdf"));
-
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-h-[90vh] w-[calc(100vw-2rem)] max-w-2xl overflow-y-auto p-4 sm:p-6">
+    <Dialog open onOpenChange={(open) => { if (!open && !loading) onClose(); }}>
+      <DialogContent className="max-h-[90vh] w-[calc(100vw-2rem)] overflow-y-auto p-4 sm:max-w-4xl sm:p-6" showCloseButton={!loading}>
         <DialogHeader>
-          <DialogTitle>
-            {formData.id ? "Edit Reimbursement" : "Tambah Reimbursement"}
-          </DialogTitle>
+          <DialogTitle>{form.id ? "Edit Reimbursement" : "Tambah Reimbursement"}</DialogTitle>
+          <DialogDescription>Lengkapi informasi klaim dan rincian pengeluaran yang ingin diajukan.</DialogDescription>
         </DialogHeader>
-
-        <form onSubmit={handleSubmit}>
-          <div className="grid gap-4 py-4">
-            {/* Karyawan */}
-            {userData.role !== "Karyawan" && (
+        <form onSubmit={handleSubmit} className="min-w-0">
+          <fieldset disabled={loading} className="grid min-w-0 gap-5">
+            {!isEmployee && (
               <div className="grid gap-2">
                 <Label>Nama Karyawan</Label>
-                <EmployeeSearchSelect
-                  value={formData.userId}
-                  onChange={(val) => {
-                    setFormData({
-                      ...formData,
-                      userId: val,
-                    });
-                  }}
-                  placeholder="Pilih Karyawan"
-                />
+                <EmployeeSearchSelect value={form.userId} onChange={(userId) => setForm({ ...form, userId })} placeholder="Pilih Karyawan" />
               </div>
             )}
-
-            {/* Judul */}
             <div className="grid gap-2">
-              <Label>Judul Klaim</Label>
-              <Input
-                placeholder="Contoh: Biaya Makan Dinas Jakarta"
-                value={formData.title}
-                onChange={(e) =>
-                  setFormData({ ...formData, title: e.target.value })
-                }
-                required
-              />
+              <Label htmlFor="claim-title">Judul Klaim</Label>
+              <Input id="claim-title" placeholder="Contoh: Biaya Perjalanan Dinas Jakarta" value={form.title}
+                onChange={(event) => setForm({ ...form, title: event.target.value })} required />
             </div>
-
-            {/* Kategori */}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-2">
+                <Label htmlFor="claim-bank">Bank Tujuan</Label>
+                <Input id="claim-bank" placeholder="Contoh: BCA" value={form.bankName}
+                  onChange={(event) => setForm({ ...form, bankName: event.target.value })} />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="claim-account">No. Rekening</Label>
+                <Input id="claim-account" placeholder="Contoh: 1234567890" value={form.accountNumber} inputMode="numeric"
+                  onChange={(event) => setForm({ ...form, accountNumber: event.target.value })} />
+              </div>
+            </div>
             <div className="grid gap-2">
-              <Label>Kategori</Label>
-              <Select
-                value={formData.category}
-                onValueChange={(val) =>
-                  setFormData({ ...formData, category: val })
-                }
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Pilih Kategori" />
-                </SelectTrigger>
-                <SelectContent>
-                  {CATEGORIES.map((cat) => (
-                    <SelectItem key={cat} value={cat}>
-                      {cat}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label htmlFor="claim-description">Keterangan (opsional)</Label>
+              <Textarea id="claim-description" placeholder="Deskripsikan klaim reimbursement Anda secara singkat" rows={3}
+                value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} />
             </div>
-
-            {/* Nominal & Tanggal */}
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div className="grid gap-2">
-                <Label>Nominal (Rp)</Label>
-                <Input
-                  type="text"
-                  placeholder="0"
-                  value={
-                    formData.amount
-                      ? formData.amount.toLocaleString("id-ID")
-                      : ""
-                  }
-                  onChange={(e) => {
-                    const numericValue = e.target.value.replace(/\D/g, "");
-                    setFormData({
-                      ...formData,
-                      amount: Number(numericValue),
-                    });
-                  }}
-                  required
-                />
-              </div>
-
-              <div className="grid gap-2">
-                <Label>Tanggal Pengeluaran</Label>
-                <Input
-                  type="date"
-                  value={
-                    formData.date
-                      ? new Date(formData.date).toISOString().split("T")[0]
-                      : ""
-                  }
-                  onChange={(e) =>
-                    setFormData({ ...formData, date: e.target.value })
-                  }
-                  required
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div className="grid gap-2">
-                <Label>Bank Tujuan</Label>
-                <Input
-                  placeholder="Contoh: BCA"
-                  value={formData.bankName ?? ""}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      bankName: e.target.value,
-                    })
-                  }
-                />
-              </div>
-
-              <div className="grid gap-2">
-                <Label>No. Rekening</Label>
-                <Input
-                  placeholder="Contoh: 1234567890"
-                  value={formData.accountNumber ?? ""}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      accountNumber: e.target.value,
-                    })
-                  }
-                />
-              </div>
-            </div>
-
-            {/* Keterangan */}
-            <div className="grid gap-2">
-              <Label>Keterangan (opsional)</Label>
-              <Textarea
-                placeholder="Deskripsikan klaim reimbursement Anda secara singkat"
-                value={formData.description ?? ""}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    description: e.target.value,
-                  })
-                }
-                rows={3}
-              />
-            </div>
-
-            {/* Upload */}
-            <div className="grid gap-3">
-              <Label>Upload Struk / Bukti Pembayaran</Label>
-
-              {!previewUrl ? (
-                <label className="flex h-40 w-full cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed px-4 text-center">
-                  <Upload className="w-6 h-6 text-gray-500" />
-                  <p className="text-sm text-gray-500">
-                    JPG, PNG, WebP, PDF (Maks. 5MB)
-                  </p>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp,application/pdf"
-                    className="hidden"
-                    onChange={handleFileChange}
-                  />
-                </label>
-              ) : (
-                <div className="relative border rounded-2xl overflow-hidden">
-                  {!isPdf ? (
-                    <img
-                      src={previewUrl}
-                      alt="Preview"
-                      className="w-full max-h-64 object-contain p-4"
-                    />
-                  ) : (
-                    <div className="flex items-center gap-4 p-6">
-                      <FileText className="w-8 h-8 text-red-500" />
-                      <p className="text-sm font-semibold">
-                        Dokumen PDF siap dikirim
-                      </p>
-                    </div>
-                  )}
-
-                  <div className="flex flex-col gap-2 bg-gray-50 p-4 sm:flex-row sm:items-center sm:justify-between">
-                    <label className="text-xs cursor-pointer">
-                      Ganti File
-                      <input
-                        type="file"
-                        accept="image/jpeg,image/png,image/webp,application/pdf"
-                        className="hidden"
-                        onChange={handleFileChange}
-                      />
-                    </label>
-
-                    <button
-                      type="button"
-                      onClick={removeReceipt}
-                      className="text-xs text-red-500"
-                    >
-                      Hapus
-                    </button>
-                  </div>
+            <section className="grid min-w-0 gap-3 border-t pt-5" aria-labelledby="expense-heading">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 id="expense-heading" className="font-semibold">Rincian Pengeluaran</h3>
+                  <p className="text-sm text-muted-foreground">Tambahkan satu rincian untuk setiap pengeluaran.</p>
                 </div>
-              )}
-
-              {fileError ? (
-                <p className="text-sm font-medium text-red-500">{fileError}</p>
-              ) : null}
+                <Button type="button" variant="outline" size="sm" disabled={loading || form.details.length >= 50}
+                  onClick={() => setForm((current) => ({ ...current, details: [...current.details, emptyDetail()] }))}>
+                  <Plus className="h-4 w-4" /> Tambah Rincian
+                </Button>
+              </div>
+              {form.details.map((detail, index) => (
+                <ExpenseRow key={detail.key} detail={detail} index={index} disabled={loading}
+                  canRemove={form.details.length > 1} onChange={(changes) => updateDetail(detail.key, changes)}
+                  onRemove={() => setForm((current) => ({ ...current, details: current.details.filter((row) => row.key !== detail.key) }))} />
+              ))}
+            </section>
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/50 p-4" aria-live="polite">
+              <div><p className="font-semibold">Total Pengeluaran</p><p className="text-sm text-muted-foreground">{form.details.length} rincian pengeluaran</p></div>
+              <p className="text-xl font-bold tabular-nums">{formatCurrency(total)}</p>
             </div>
-          </div>
-
-          {/* Buttons */}
-          <div className="flex flex-col-reverse gap-3 border-t pt-4 sm:flex-row sm:justify-end">
-            <Button type="button" variant="outline" onClick={onClose} className="w-full sm:w-auto">
-              Batal
-            </Button>
-            <Button type="submit" disabled={loading} className="w-full sm:w-auto">
-              {loading ? "Menyimpan..." : formData.id ? "Update" : "Simpan"}
-            </Button>
-          </div>
+            <div className="flex flex-col-reverse gap-3 border-t pt-4 sm:flex-row sm:justify-end">
+              <Button type="button" variant="outline" onClick={onClose}>Batal</Button>
+              <Button type="submit">{loading ? "Menyimpan..." : form.id ? "Update" : "Simpan"}</Button>
+            </div>
+          </fieldset>
         </form>
       </DialogContent>
     </Dialog>

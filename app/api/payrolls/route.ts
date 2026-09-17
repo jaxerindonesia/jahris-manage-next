@@ -61,6 +61,8 @@ export async function GET(req: NextRequest) {
     const month = searchParams.get("month") || "";
     const year = searchParams.get("year") || "";
     const status = searchParams.get("status") || "";
+    const startDate = searchParams.get("startDate") || "";
+    const endDate = searchParams.get("endDate") || "";
 
     const where: Prisma.PayrollWhereInput = {};
     const scopedTenantId = ensureTenantScope(auth.user);
@@ -73,12 +75,41 @@ export async function GET(req: NextRequest) {
       ];
     }
 
-    if (month) {
-      where.month = parseInt(month);
-    }
+    if (startDate || endDate) {
+      const start = startDate ? new Date(startDate) : new Date(2000, 0, 1);
+      start.setHours(0, 0, 0, 0);
+      const end = endDate ? new Date(endDate) : new Date(2100, 11, 31);
+      end.setHours(23, 59, 59, 999);
 
-    if (year) {
-      where.year = parseInt(year);
+      // Collect all (month, year) periods in range
+      const periods: { month: number; year: number }[] = [];
+      const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+      const last = new Date(end.getFullYear(), end.getMonth(), 1);
+      while (cursor <= last) {
+        periods.push({
+          month: cursor.getMonth() + 1,
+          year: cursor.getFullYear(),
+        });
+        cursor.setMonth(cursor.getMonth() + 1);
+      }
+
+      where.AND = [
+        ...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []),
+        {
+          OR: [
+            ...periods.map((p) => ({ month: p.month, year: p.year })),
+            { createdAt: { gte: start, lte: end } },
+          ],
+        },
+      ];
+    } else {
+      if (month) {
+        where.month = parseInt(month);
+      }
+
+      if (year) {
+        where.year = parseInt(year);
+      }
     }
 
     if (status) {
@@ -131,6 +162,8 @@ export async function POST(req: NextRequest) {
       status,
       paidAt,
       componentValues,
+      startDate,
+      endDate,
     } = body;
 
     if (!userId || !month || !year || !status) {
@@ -161,6 +194,8 @@ export async function POST(req: NextRequest) {
       userId,
       month: normalizedMonth,
       year: normalizedYear,
+      startDate,
+      endDate,
     });
     const finalTenantId = salarySummary.tenantId;
 
@@ -187,6 +222,8 @@ export async function POST(req: NextRequest) {
       userId,
       month: normalizedMonth,
       year: normalizedYear,
+      startDate,
+      endDate,
     });
     if (overtimeSummary.totalAmount > 0) {
       normalizedComponentValues.push({

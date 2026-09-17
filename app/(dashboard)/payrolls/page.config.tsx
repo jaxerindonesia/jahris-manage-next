@@ -30,10 +30,16 @@ interface HeaderToolbarProps {
     clear: () => void;
     searchTerm: string;
     setSearchTerm: React.Dispatch<React.SetStateAction<string>>;
+    periodMode: "month" | "range";
+    setPeriodMode: React.Dispatch<React.SetStateAction<"month" | "range">>;
     month: string;
     setMonth: React.Dispatch<React.SetStateAction<string>>;
     year: string;
     setYear: React.Dispatch<React.SetStateAction<string>>;
+    startDate: string;
+    setStartDate: React.Dispatch<React.SetStateAction<string>>;
+    endDate: string;
+    setEndDate: React.Dispatch<React.SetStateAction<string>>;
     status: string;
     setStatus: React.Dispatch<React.SetStateAction<string>>;
   };
@@ -176,8 +182,34 @@ export const headerToolbar = ({ actions, filters }: HeaderToolbarProps) => (
 
     {filters.show && (
       <div className="mb-6 rounded-lg border bg-gray-50 p-4 dark:border-gray-600 dark:bg-gray-700/50">
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="font-semibold text-slate-900 dark:text-white">Filter Data Payroll</h3>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <h3 className="font-semibold text-slate-900 dark:text-white">Filter Data Payroll</h3>
+            <div className="inline-flex rounded-lg bg-gray-200/80 p-0.5 dark:bg-gray-800">
+              <button
+                type="button"
+                onClick={() => filters.setPeriodMode("month")}
+                className={`rounded-md px-3 py-1 text-xs font-medium transition-all ${
+                  filters.periodMode === "month"
+                    ? "bg-white text-blue-600 shadow-sm dark:bg-gray-700 dark:text-blue-400"
+                    : "text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
+                }`}
+              >
+                By Bulan
+              </button>
+              <button
+                type="button"
+                onClick={() => filters.setPeriodMode("range")}
+                className={`rounded-md px-3 py-1 text-xs font-medium transition-all ${
+                  filters.periodMode === "range"
+                    ? "bg-white text-blue-600 shadow-sm dark:bg-gray-700 dark:text-blue-400"
+                    : "text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
+                }`}
+              >
+                By Range Tanggal
+              </button>
+            </div>
+          </div>
           {filters.activeCount > 0 && (
             <button onClick={filters.clear} className="flex items-center gap-1 text-sm text-blue-600 hover:underline dark:text-blue-400">
               <X className="h-4 w-4" />
@@ -186,7 +218,7 @@ export const headerToolbar = ({ actions, filters }: HeaderToolbarProps) => (
           )}
         </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div>
             <Label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">Cari</Label>
             <Input
@@ -197,32 +229,60 @@ export const headerToolbar = ({ actions, filters }: HeaderToolbarProps) => (
               className="w-full rounded-lg border bg-white px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
             />
           </div>
-          <div>
-            <Label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">Bulan</Label>
-            <Select value={filters.month} onValueChange={filters.setMonth}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Semua Bulan" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Semua Bulan</SelectItem>
-                {months.map((month) => (
-                  <SelectItem key={month.value} value={String(month.value)}>
-                    {month.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">Tahun</Label>
-            <Input
-              type="number"
-              value={filters.year === "all" ? "" : filters.year}
-              onChange={(e) => filters.setYear(e.target.value || "all")}
-              placeholder="Contoh: 2024"
-              className="w-full rounded-lg border bg-white px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-            />
-          </div>
+
+          {filters.periodMode === "month" ? (
+            <>
+              <div>
+                <Label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">Bulan</Label>
+                <Select value={filters.month} onValueChange={filters.setMonth}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Semua Bulan" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Semua Bulan</SelectItem>
+                    {months.map((month) => (
+                      <SelectItem key={month.value} value={String(month.value)}>
+                        {month.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">Tahun</Label>
+                <Input
+                  type="number"
+                  value={filters.year === "all" ? "" : filters.year}
+                  onChange={(e) => filters.setYear(e.target.value || "all")}
+                  placeholder="Contoh: 2024"
+                  className="w-full rounded-lg border bg-white px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              <div>
+                <Label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">Tanggal Mulai</Label>
+                <Input
+                  type="date"
+                  value={filters.startDate}
+                  onChange={(e) => filters.setStartDate(e.target.value)}
+                  className="w-full rounded-lg border bg-white px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                />
+              </div>
+              <div>
+                <Label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">Tanggal Selesai</Label>
+                <Input
+                  type="date"
+                  value={filters.endDate}
+                  min={filters.startDate || undefined}
+                  onChange={(e) => filters.setEndDate(e.target.value)}
+                  className="w-full rounded-lg border bg-white px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                />
+              </div>
+            </>
+          )}
+
           <div>
             <Label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">Status</Label>
             <Select value={filters.status} onValueChange={filters.setStatus}>

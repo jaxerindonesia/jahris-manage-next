@@ -1,273 +1,142 @@
-export const runtime = "nodejs";
+﻿export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
-import { lockReimbursementJournal, syncReimbursementJournal } from "@/lib/helper/reimbursement-journal";
 import prisma from "@/lib/prisma";
+import { getReceiptUrls } from "@/lib/helper/reimbursement";
 import { ensureTenantScope, requireSessionUser } from "@/lib/auth/tenant";
 import { requirePermission } from "@/lib/auth/permission";
-import { buildTenantStorageObjectName } from "@/lib/helper/storage";
 import { writeAuditLog } from "@/lib/security/audit-log";
-import { uploadBufferToMinio, deleteFromMinio, BUCKET_AVATARS } from "@/lib/minio";
-import { validateAttachmentBuffer } from "@/lib/security/file-validation";
+import { lockReimbursementJournal, syncReimbursementJournal } from "@/lib/helper/reimbursement-journal";
+import { cleanupReimbursementReceipts, prepareReimbursementDetails, ReimbursementInputError } from "@/lib/helper/reimbursement-details";
 
-type Params = { params: { id: string } };
+type Params = { params: Promise<{ id: string }> };
+const includeDetails = { details: { orderBy: { position: "asc" as const } } };
 
 export async function GET(_: Request, { params }: Params) {
-  const p = await params;
+  const { id } = await params;
   try {
     const auth = await requireSessionUser();
     if (auth.error) return auth.error;
     const forbid = requirePermission(auth.user, "reimbursements", "get-by-id");
     if (forbid) return forbid;
-    const scopedTenantId = ensureTenantScope(auth.user);
-
+    const tenantId = ensureTenantScope(auth.user);
+    const isEmployee = auth.user.roleName.toLowerCase().replace(/\s/g, "") === "karyawan";
     const item = await prisma.reimbursement.findFirst({
-      where: { id: p.id, ...(scopedTenantId ? { tenantId: scopedTenantId } : {}) },
-      include: {
-        user: {
-          select: { id: true, name: true, position: true, department: true },
-        },
-      },
+      where: { id, ...(tenantId ? { tenantId } : {}), ...(isEmployee ? { userId: auth.user.id } : {}) },
+      include: { ...includeDetails, user: { select: { id: true, name: true, position: true, department: true } } },
     });
-
-    if (!item) {
-      return NextResponse.json(
-        { message: "Reimbursement not found" },
-        { status: 404 },
-      );
-    }
-
+    if (!item) return NextResponse.json({ message: "Reimbursement not found" }, { status: 404 });
     return NextResponse.json({ message: "Success", data: item });
-  } catch (error) {
-    return NextResponse.json(
-      { message: "Failed to retrieve reimbursement" },
-      { status: 500 },
-    );
+  } catch {
+    return NextResponse.json({ message: "Failed to retrieve reimbursement" }, { status: 500 });
   }
 }
 
 export async function PUT(req: Request, { params }: Params) {
-  const p = await params;
-
+  const { id } = await params;
+  const uploadedUrls: string[] = [];
+  let saved = false;
   try {
     const auth = await requireSessionUser();
     if (auth.error) return auth.error;
-    const body =
-      req.headers.get("content-type")?.includes("application/json")
-        ? await req.clone().json().catch(() => ({}))
-        : null;
-    const nextStatus =
-      typeof body?.status === "string" ? body.status.toUpperCase() : null;
-    const action =
-      nextStatus === "APPROVED" || nextStatus === "REJECTED"
-        ? "approve"
-        : "update";
-    const forbid = requirePermission(auth.user, "reimbursements", action);
+    const multipart = req.headers.get("content-type")?.includes("multipart/form-data");
+    const body = multipart ? null : await req.json();
+    const status = typeof body?.status === "string" ? body.status.toUpperCase() : null;
+    const forbid = requirePermission(auth.user, "reimbursements", multipart ? "update" : "approve");
     if (forbid) return forbid;
-    const scopedTenantId = ensureTenantScope(auth.user);
-
-    const contentType = req.headers.get("content-type") || "";
-
-    const updateData: Prisma.ReimbursementUncheckedUpdateInput = {};
-    let removeReceipt = false;
-    let newFile: File | null = null;
-
-    if (contentType.includes("multipart/form-data")) {
-      const formData = await req.formData();
-
-      const title = formData.get("title");
-      const category = formData.get("category");
-      const amount = formData.get("amount");
-      const date = formData.get("date");
-      const bankName = formData.get("bankName");
-      const accountNumber = formData.get("accountNumber");
-      const description = formData.get("description");
-      const status = formData.get("status");
-      const approvedAt = formData.get("approvedAt");
-      removeReceipt = formData.get("removeReceipt") === "true";
-      newFile = formData.get("file") as File | null;
-
-      if (title !== null) updateData.title = String(title);
-      if (category !== null) updateData.category = String(category);
-      if (amount !== null) updateData.amount = Number(amount);
-      if (date !== null) updateData.date = new Date(date as string);
-      if (bankName !== null) updateData.bankName = String(bankName).trim() || null;
-      if (accountNumber !== null)
-        updateData.accountNumber = String(accountNumber).trim() || null;
-      if (description !== null) updateData.description = String(description);
-      if (status !== null) updateData.status = String(status);
-      if (approvedAt !== null)
-        updateData.approvedAt = approvedAt
-          ? new Date(approvedAt as string)
-          : null;
-      updateData.approvedBy = auth.user.id;
-    } else {
-      const parsedBody = body ?? (await req.json());
-
-      if (parsedBody.title !== undefined) updateData.title = parsedBody.title;
-      if (parsedBody.category !== undefined) updateData.category = parsedBody.category;
-      if (parsedBody.amount !== undefined) updateData.amount = Number(parsedBody.amount);
-      if (parsedBody.date !== undefined) updateData.date = new Date(parsedBody.date);
-      if (parsedBody.bankName !== undefined)
-        updateData.bankName = String(parsedBody.bankName).trim() || null;
-      if (parsedBody.accountNumber !== undefined)
-        updateData.accountNumber = String(parsedBody.accountNumber).trim() || null;
-      if (parsedBody.description !== undefined)
-        updateData.description = parsedBody.description;
-      if (parsedBody.status !== undefined) updateData.status = parsedBody.status;
-      if (parsedBody.approvedAt !== undefined)
-        updateData.approvedAt = parsedBody.approvedAt
-          ? new Date(parsedBody.approvedAt)
-          : null;
-
-      updateData.approvedBy = auth.user.id;
-      removeReceipt = parsedBody.removeReceipt === true;
-    }
-
+    const tenantId = ensureTenantScope(auth.user);
     const existing = await prisma.reimbursement.findFirst({
-      where: { id: p.id, ...(scopedTenantId ? { tenantId: scopedTenantId } : {}) },
+      where: { id, ...(tenantId ? { tenantId } : {}) }, include: includeDetails,
     });
+    if (!existing) return NextResponse.json({ message: "Data tidak ditemukan" }, { status: 404 });
 
-    if (!existing) {
-      return NextResponse.json(
-        { message: "Data tidak ditemukan" },
-        { status: 404 },
-      );
-    }
-
-    if (typeof updateData.status === "string") {
-      updateData.status = updateData.status.toUpperCase();
-      if (!["PENDING", "APPROVED", "REJECTED"].includes(updateData.status)) {
-        return NextResponse.json({ message: "Status reimbursement tidak valid" }, { status: 400 });
+    const updateData: Prisma.ReimbursementUpdateInput = {};
+    let retainedUrls = existing.details.flatMap(getReceiptUrls);
+    if (multipart) {
+      const form = await req.formData();
+      const title = String(form.get("title") || "").trim();
+      if (!title) throw new ReimbursementInputError("Judul klaim wajib diisi");
+      const userId = String(form.get("userId") || existing.userId);
+      if (userId !== existing.userId) {
+        const employee = await prisma.user.findFirst({ where: { id: userId, tenantId: existing.tenantId, deletedAt: null } });
+        if (!employee) throw new ReimbursementInputError("Karyawan tidak ditemukan dalam perusahaan ini");
+        updateData.user = { connect: { id: userId } };
       }
-      if (updateData.status !== existing.status.toUpperCase()) {
-        const approvalForbid = requirePermission(auth.user, "reimbursements", "approve");
-        if (approvalForbid) return approvalForbid;
+      const priorDetails = existing.details.length ? existing.details : [{ receiptUrl: existing.receiptUrl }];
+      const { details, ...summary } = await prepareReimbursementDetails(form, existing.tenantId, uploadedUrls, priorDetails);
+      Object.assign(updateData, summary, {
+        title,
+        bankName: String(form.get("bankName") || "").trim() || null,
+        accountNumber: String(form.get("accountNumber") || "").trim() || null,
+        description: String(form.get("description") || "").trim() || null,
+        details: { deleteMany: {}, create: details },
+      });
+      retainedUrls = details.flatMap(getReceiptUrls);
+    } else {
+      if (!status || !["PENDING", "APPROVED", "REJECTED"].includes(status)) {
+        throw new ReimbursementInputError("Status reimbursement tidak valid");
       }
-      updateData.approvedAt = updateData.status === "PENDING" ? null : new Date();
+      updateData.status = status;
+      updateData.approvedAt = status === "PENDING" ? null : new Date();
+      updateData.approvedBy = status === "PENDING" ? null : auth.user.id;
     }
-    if (typeof updateData.amount === "number" && (!Number.isFinite(updateData.amount) || updateData.amount <= 0)) {
-      return NextResponse.json({ message: "Nominal harus lebih dari nol" }, { status: 400 });
-    }
-    if (updateData.date instanceof Date && Number.isNaN(updateData.date.getTime())) {
-      return NextResponse.json({ message: "Tanggal tidak valid" }, { status: 400 });
-    }
-
-    let receiptUrl = existing.receiptUrl;
-
-    if (newFile && newFile.size > 0) {
-      const bytes = await newFile.arrayBuffer();
-      const buffer = Buffer.from(bytes);
-      const validation = validateAttachmentBuffer(
-        newFile.name || "",
-        newFile.type || "application/octet-stream",
-        buffer,
-      );
-      if (!validation.ok) {
-        return NextResponse.json({ message: validation.message }, { status: 415 });
-      }
-
-      const fileName = await buildTenantStorageObjectName(
-        scopedTenantId,
-        "reimbursements",
-        `receipt-${p.id}-${Date.now()}-${newFile.name.replace(/\s+/g, "_")}`,
-      );
-      
-      receiptUrl = await uploadBufferToMinio(
-        buffer,
-        fileName,
-        BUCKET_AVATARS,
-        validation.contentType,
-      );
-
-      
-      if (existing.receiptUrl) {
-        if (existing.receiptUrl.includes(BUCKET_AVATARS)) {
-          await deleteFromMinio(existing.receiptUrl);
-        }
-      }
-    }
-
-    if (removeReceipt) {
-      if (existing.receiptUrl) {
-        if (existing.receiptUrl.includes(BUCKET_AVATARS)) {
-          await deleteFromMinio(existing.receiptUrl);
-        }
-      }
-      receiptUrl = null;
-    }
-
-    updateData.receiptUrl = receiptUrl;
 
     const updated = await prisma.$transaction(async (tx) => {
       await lockReimbursementJournal(tx, existing.tenantId);
-      const claim = await tx.reimbursement.update({ where: { id: p.id }, data: updateData });
+      const current = await tx.reimbursement.findUnique({ where: { id } });
+      if (!current || current.updatedAt.getTime() !== existing.updatedAt.getTime()) {
+        throw new ReimbursementInputError("Klaim telah berubah. Muat ulang sebelum menyimpan kembali.");
+      }
+      const claim = await tx.reimbursement.update({ where: { id }, data: updateData, include: includeDetails });
       await syncReimbursementJournal(tx, claim);
       return claim;
     });
-
-    if (action === "approve") {
+    saved = true;
+    if (multipart) {
+      const oldUrls = [existing.receiptUrl, ...existing.details.flatMap(getReceiptUrls)];
+      await cleanupReimbursementReceipts(oldUrls.filter((url) => !url || !retainedUrls.includes(url)));
+    }
+    if (!multipart) {
       writeAuditLog({
-        action:
-          nextStatus === "REJECTED"
-            ? "reimbursements.reject"
-            : "reimbursements.approve",
-        status: "success",
-        actorUserId: auth.user.id,
-        actorRole: auth.user.roleName,
-        tenantId: auth.user.tenantId,
-        targetType: "reimbursement",
-        targetId: updated.id,
-        message: `Reimbursement ${nextStatus?.toLowerCase() || "updated"}`,
-        metadata: {
-          status: updated.status,
-          approvedBy: updated.approvedBy,
-        },
+        action: status === "REJECTED" ? "reimbursements.reject" : "reimbursements.approve",
+        status: "success", actorUserId: auth.user.id, actorRole: auth.user.roleName,
+        tenantId: auth.user.tenantId, targetType: "reimbursement", targetId: id,
+        message: `Reimbursement ${status?.toLowerCase()}`,
+        metadata: { status: updated.status, approvedBy: updated.approvedBy },
       });
     }
-
-    return NextResponse.json({
-      message: "Reimbursement successfully updated",
-      data: updated,
-    });
+    return NextResponse.json({ message: "Reimbursement successfully updated", data: updated });
   } catch (error) {
+    if (!saved) await cleanupReimbursementReceipts(uploadedUrls);
+    if (error instanceof ReimbursementInputError) return NextResponse.json({ message: error.message }, { status: 400 });
     console.error(error);
-    return NextResponse.json(
-      { message: "Failed to update reimbursement" },
-      { status: 500 },
-    );
+    return NextResponse.json({ message: "Failed to update reimbursement" }, { status: 500 });
   }
 }
 
 export async function DELETE(_: Request, { params }: Params) {
-  const p = await params;
+  const { id } = await params;
   try {
     const auth = await requireSessionUser();
     if (auth.error) return auth.error;
     const forbid = requirePermission(auth.user, "reimbursements", "delete");
     if (forbid) return forbid;
-    const scopedTenantId = ensureTenantScope(auth.user);
-
-    const existing = await prisma.reimbursement.findFirst({
-      where: { id: p.id, ...(scopedTenantId ? { tenantId: scopedTenantId } : {}) },
+    const tenantId = ensureTenantScope(auth.user);
+    const existing = await prisma.$transaction(async (tx) => {
+      const claim = await tx.reimbursement.findFirst({ where: { id, ...(tenantId ? { tenantId } : {}) } });
+      if (!claim) return null;
+      await lockReimbursementJournal(tx, claim.tenantId);
+      const current = await tx.reimbursement.findUnique({ where: { id }, include: includeDetails });
+      if (!current) return null;
+      await syncReimbursementJournal(tx, { ...current, status: "REJECTED" });
+      await tx.reimbursement.delete({ where: { id } });
+      return current;
     });
     if (!existing) return NextResponse.json({ message: "Reimbursement not found" }, { status: 404 });
-
-    if (existing.receiptUrl && existing.receiptUrl.includes(BUCKET_AVATARS)) {
-      await deleteFromMinio(existing.receiptUrl);
-    }
-
-    await prisma.$transaction(async (tx) => {
-      await lockReimbursementJournal(tx, existing.tenantId);
-      await syncReimbursementJournal(tx, { ...existing, status: "REJECTED" });
-      await tx.reimbursement.delete({ where: { id: p.id } });
-    });
+    await cleanupReimbursementReceipts([existing.receiptUrl, ...existing.details.flatMap(getReceiptUrls)]);
     return NextResponse.json({ message: "Reimbursement successfully deleted" });
-  } catch (error) {
-    return NextResponse.json(
-      { message: "Failed to delete reimbursement" },
-      { status: 500 },
-    );
+  } catch {
+    return NextResponse.json({ message: "Failed to delete reimbursement" }, { status: 500 });
   }
 }
