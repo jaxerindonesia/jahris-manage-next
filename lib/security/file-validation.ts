@@ -120,6 +120,13 @@ export function validateAttachmentBuffer(
     return { ok: true as const, contentType: "application/pdf" };
   }
 
+  if (extension === ".webp") {
+    if (buffer.length < 12 || buffer.toString("ascii", 0, 4) !== "RIFF" || buffer.toString("ascii", 8, 12) !== "WEBP") {
+      return { ok: false as const, message: "File WebP tidak valid" };
+    }
+    return { ok: true as const, contentType: "image/webp" };
+  }
+
   if ([".xlsx", ".docx", ".pptx"].includes(extension)) {
     if (!hasSignature(buffer, ZIP_SIGNATURE)) {
       return {

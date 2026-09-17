@@ -4,6 +4,8 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { ensureTenantScope, requireSessionUser } from "@/lib/auth/tenant";
 import { requirePermission } from "@/lib/auth/permission";
+import { requestOvertimeFromAttendance } from "./from-attendance";
+import { getOvertimeApproverIds } from "@/lib/helper/overtime-approvers";
 
 function getOvertimeDate(dateValue: string) {
   return new Date(`${dateValue}T00:00:00`);
@@ -15,6 +17,9 @@ export async function POST(req: NextRequest) {
     if (auth.error) return auth.error;
     const forbid = requirePermission(auth.user, "overtimes", "create");
     if (forbid) return forbid;
+    if (req.headers.get("content-type")?.includes("multipart/form-data")) {
+      return await requestOvertimeFromAttendance(req, auth.user);
+    }
 
     const body = await req.json();
     const normalizedRole = auth.user.roleName.toLowerCase().replace(/\s/g, "");
@@ -73,21 +78,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const approverConfigs = await prisma.overtimeApproverConfig.findMany({
-      where: finalTenantId ? { tenantId: finalTenantId } : { tenantId: null },
-      select: { approverUserId: true },
-    });
-    let approverUserIds = approverConfigs.map((cfg) => cfg.approverUserId);
-    if (approverUserIds.length === 0) {
-      const defaultApprovers = await prisma.user.findMany({
-        where: {
-          ...(finalTenantId ? { tenantId: finalTenantId } : {}),
-          role: { name: { in: ["Admin", "Super Admin"] } },
-        },
-        select: { id: true },
-      });
-      approverUserIds = defaultApprovers.map((user) => user.id);
-    }
+    const approverUserIds = await getOvertimeApproverIds(prisma, finalTenantId);
     if (approverUserIds.length === 0) {
       return NextResponse.json(
         { message: "Belum ada approver lembur yang dikonfigurasi" },

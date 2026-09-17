@@ -86,8 +86,9 @@ export async function GET() {
           { model: "leaves", action: "get-by-id" },
           { model: "leaves", action: "create" },
 
-          { model: "attendance", action: "get-all" },
-          { model: "attendance", action: "create" },
+          { model: "attendances", action: "get-all" },
+          { model: "attendances", action: "create" },
+          { model: "attendances", action: "update" },
         ],
       },
     ];

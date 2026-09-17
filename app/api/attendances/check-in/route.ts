@@ -79,9 +79,8 @@ export async function POST(req: Request) {
       }
     }
 
-    if (!canManageAttendances && userId !== auth.user.id) {
-      return jsonError("Forbidden", 403);
-    }
+    // If not admin, force targetUserId to be the logged-in user (prevents 403 if localStorage is out of sync)
+    // We already set `targetUserId` above safely.
 
     const now = new Date();
     const schedule = await resolveActiveWorkSchedule(prisma, targetUserId, now);

@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { X, Printer, CheckCircle, Clock, XCircle, ExternalLink } from "lucide-react";
+import React, { useState } from "react";
+import { X, Printer, CheckCircle, Clock, XCircle } from "lucide-react";
 import { ReimbursementDto } from "@/lib/dto/reimbursement";
 import { formatCurrency } from "@/lib/helper/format-currency";
+import { getReimbursementDetails, getReceiptUrls } from "@/lib/helper/reimbursement";
+import { formatDateId } from "@/lib/helper/date";
 
 interface SlipReimbursementModalProps {
   open?: boolean;
@@ -22,97 +24,180 @@ type TenantConfig = {
   tenantLogoDarkUrl?: string | null;
 };
 
-export default function SlipReimbursementModal({
-  open = true,
-  detailItem,
-  onClose,
-  loading = false,
-}: SlipReimbursementModalProps) {
-  const [tenantConfig, setTenantConfig] = useState<TenantConfig | null>(null);
+export default function SlipReimbursementModal({ open = true, ...props }: SlipReimbursementModalProps) {
+  return open ? <SlipReimbursementContent {...props} /> : null;
+}
 
-  useEffect(() => {
+function SlipReimbursementContent({ detailItem, onClose, loading = false }: SlipReimbursementModalProps) {
+  const [tenantConfig] = useState<TenantConfig | null>(() => {
     try {
       const raw = localStorage.getItem("hr_user_data");
-      if (!raw) return;
-
+      if (!raw) return null;
       const parsed = JSON.parse(raw) as TenantConfig;
-      setTenantConfig({
+      return {
         companyName: parsed.companyName ?? parsed.tenantName ?? null,
         companyUrl: parsed.companyUrl ?? null,
         logoUrl: parsed.logoUrl ?? parsed.tenantLogoUrl ?? null,
         logoDarkUrl: parsed.logoDarkUrl ?? parsed.tenantLogoDarkUrl ?? null,
-      });
-    } catch {
-      setTenantConfig(null);
-    }
-  }, []);
-
-  if (!open) return null;
+      };
+    } catch { return null; }
+  });
 
   const handlePrint = () => {
     const slip = document.getElementById("reimburse-print-area");
-    if (!slip) {
-      window.print();
-      return;
-    }
+    if (!slip) { window.print(); return; }
 
     const printWindow = window.open("", "_blank", "width=1200,height=900");
-    if (!printWindow) {
-      window.print();
-      return;
-    }
-
-    const styles = Array.from(document.querySelectorAll('link[rel="stylesheet"], style'))
-      .map((el) => el.outerHTML)
-      .join("");
+    if (!printWindow) { window.print(); return; }
 
     printWindow.document.open();
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>Bukti Reimbursement</title>
-          <meta charset="utf-8" />
-          <meta name="viewport" content="width=device-width, initial-scale=1" />
-          ${styles}
-          <style>
-            @page {
-              size: A4 portrait;
-              margin: 10mm;
-            }
-            html, body {
-              margin: 0 !important;
-              padding: 0 !important;
-              background: white !important;
-            }
-            body {
-              -webkit-print-color-adjust: exact !important;
-              print-color-adjust: exact !important;
-            }
-            #reimburse-print-area {
-              width: 190mm !important;
-              max-width: 190mm !important;
-              margin: 0 auto !important;
-              box-sizing: border-box !important;
-              page-break-inside: avoid !important;
-            }
-            #reimburse-print-area img {
-              max-width: 100% !important;
-              height: auto !important;
-            }
-            #reimburse-print-area table,
-            #reimburse-print-area tr,
-            #reimburse-print-area td,
-            #reimburse-print-area th,
-            #reimburse-print-area div {
-              page-break-inside: avoid !important;
-            }
-          </style>
-        </head>
-        <body style="margin:0;padding:0;background:#fff;">
-          ${slip.outerHTML}
-        </body>
-      </html>
-    `);
+    printWindow.document.write(`<!DOCTYPE html>
+<html>
+<head>
+  <title>Bukti Reimbursement</title>
+  <meta charset="utf-8" />
+  <style>
+    @page { size: A4 portrait; margin: 12mm 14mm; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 10pt;
+      color: #1f2937;
+      background: #fff;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    /* ─── Header ─── */
+    .slip-header {
+      background: linear-gradient(90deg, #1e3a8a 0%, #1d4ed8 100%) !important;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: #fff;
+    }
+    .slip-header-left { display: flex; align-items: center; gap: 12px; }
+    .slip-header-logo { max-height: 40px; max-width: 80px; object-fit: contain; }
+    .slip-header-company { font-size: 14pt; font-weight: 700; }
+    .slip-header-dept { font-size: 8pt; color: #bfdbfe; }
+    .slip-header-right { text-align: right; }
+    .slip-header-label { font-size: 7pt; text-transform: uppercase; letter-spacing: 0.1em; color: #bfdbfe; }
+    .slip-header-date { font-size: 12pt; font-weight: 700; }
+
+    /* ─── Info Karyawan ─── */
+    .slip-info {
+      background: #eff6ff;
+      border-bottom: 1px solid #bfdbfe;
+      padding: 14px 24px;
+    }
+    .slip-info-row { display: flex; gap: 16px; margin-bottom: 10px; }
+    .slip-info-row:last-child { margin-bottom: 0; }
+    .slip-info-col { flex: 1; min-width: 0; }
+    .slip-info-col-right { flex: 1; text-align: right; }
+    .slip-info-label { font-size: 7pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #6b7280; margin-bottom: 2px; }
+    .slip-info-value { font-size: 10pt; font-weight: 700; color: #111827; }
+    .slip-info-value-sm { font-size: 9pt; font-weight: 600; color: #374151; }
+
+    /* Status badge */
+    .badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 999px; font-size: 8pt; font-weight: 700; }
+    .badge-yellow { background: #fef9c3; color: #92400e; }
+    .badge-green  { background: #dcfce7; color: #166534; }
+    .badge-red    { background: #fee2e2; color: #991b1b; }
+
+    /* ─── Body ─── */
+    .slip-body { padding: 16px 24px; }
+
+    /* ─── Table ─── */
+    table { width: 100%; border-collapse: collapse; }
+    th, td { vertical-align: top; }
+    .tbl-detail th { padding: 6px 0; font-size: 7pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #6b7280; border-bottom: 2px solid #e5e7eb; }
+    .tbl-detail td { padding: 8px 0; font-size: 9pt; color: #374151; border-bottom: 1px solid #f3f4f6; }
+    .tbl-detail td.right, .tbl-detail th.right { text-align: right; }
+    .tbl-detail td.bold { font-weight: 600; color: #111827; }
+
+    /* ─── Section title ─── */
+    .section-title { font-size: 10pt; font-weight: 700; margin: 14px 0 6px; color: #111827; }
+
+    /* ─── Total box ─── */
+    .total-box {
+      margin-top: 14px;
+      background: linear-gradient(90deg, #1e3a8a 0%, #1d4ed8 100%) !important;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+      border-radius: 8px;
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: #fff;
+    }
+    .total-box-label { font-size: 9pt; color: #bfdbfe; }
+    .total-box-sub   { font-size: 7pt; color: #93c5fd; margin-top: 2px; }
+    .total-box-amount { font-size: 16pt; font-weight: 700; }
+
+    /* ─── Validasi ─── */
+    .validasi { margin: 14px 0 0; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 10px 14px; }
+    .validasi-title { font-size: 7pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #1d4ed8; margin-bottom: 6px; }
+    .validasi p { font-size: 8pt; color: #374151; margin-bottom: 3px; }
+    .validasi p:last-child { margin-bottom: 0; }
+    .footer-note { margin-top: 14px; text-align: center; font-size: 7pt; color: #9ca3af; }
+
+    /* ─── Lampiran Foto ─── */
+    .lampiran-section { padding: 16px 24px; page-break-before: always; break-before: page; }
+    .lampiran-title { font-size: 13pt; font-weight: 700; color: #111827; margin-bottom: 2px; }
+    .lampiran-sub { font-size: 8pt; color: #6b7280; margin-bottom: 16px; }
+
+    /* Per expense group */
+    .expense-group { margin-bottom: 20px; }
+    .expense-group-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      padding: 6px 12px;
+      margin-bottom: 10px;
+    }
+    .expense-badge {
+      background: #1d4ed8 !important;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+      color: #fff;
+      font-size: 7pt;
+      font-weight: 700;
+      text-transform: uppercase;
+      border-radius: 4px;
+      padding: 2px 7px;
+    }
+    .expense-date { font-size: 9pt; color: #374151; }
+    .expense-amount { font-size: 9pt; font-weight: 700; color: #111827; margin-left: auto; }
+
+    /* Photo card */
+    .photo-card { border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; margin-bottom: 14px; page-break-inside: avoid; break-inside: avoid; }
+    .photo-card-header { background: #f9fafb; border-bottom: 1px solid #e5e7eb; padding: 5px 12px; font-size: 7pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: #6b7280; }
+    .photo-card-body { padding: 10px; text-align: center; background: #fff; }
+    /* KEY FIX: Natural aspect ratio, not distorted */
+    .photo-card-body img {
+      display: block;
+      margin: 0 auto;
+      max-width: 100%;
+      width: auto;
+      height: auto;
+      max-height: 200mm;
+      object-fit: contain;
+      border-radius: 4px;
+    }
+    .photo-error { padding: 20px; text-align: center; color: #9ca3af; font-size: 8pt; background: #f9fafb; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  ${slip.outerHTML}
+</body>
+</html>`);
     printWindow.document.close();
 
     const doPrint = () => {
@@ -120,15 +205,13 @@ export default function SlipReimbursementModal({
         printWindow.focus();
         printWindow.print();
         printWindow.onafterprint = () => printWindow.close();
-      } catch {
-        printWindow.close();
-      }
+      } catch { printWindow.close(); }
     };
 
     if (printWindow.document.readyState === "complete") {
-      setTimeout(doPrint, 250);
+      setTimeout(doPrint, 300);
     } else {
-      printWindow.onload = () => setTimeout(doPrint, 250);
+      printWindow.onload = () => setTimeout(doPrint, 300);
     }
   };
 
@@ -181,18 +264,16 @@ function SlipContent({
   tenantConfig?: TenantConfig | null;
 }) {
   const generatedAtLabel = new Date().toLocaleString("id-ID", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
+    day: "numeric", month: "long", year: "numeric",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
   });
+
   const referenceNumber =
     reimbursement.referenceNumber ||
     (reimbursement.createdAt
       ? `RBM-${new Date(reimbursement.createdAt).getFullYear()}-${String(reimbursement.id || "").slice(0, 8).toUpperCase()}`
       : `RBM-${String(reimbursement.id || "").slice(0, 8).toUpperCase()}`);
+
   const normalizedStatus = String(reimbursement.status || "").toUpperCase();
   const isApproved = normalizedStatus === "APPROVED";
   const isRejected = normalizedStatus === "REJECTED";
@@ -202,21 +283,29 @@ function SlipContent({
       : reimbursement.user?.department?.name;
 
   const companyName = tenantConfig?.companyName?.trim() || "JAXER GRUP INDONESIA";
-  const companyUrl = tenantConfig?.companyUrl?.trim() || "";
+  const companyUrl  = tenantConfig?.companyUrl?.trim() || "";
   const companyLogo =
-    tenantConfig?.logoDarkUrl ||
-    tenantConfig?.logoUrl ||
-    tenantConfig?.tenantLogoDarkUrl ||
-    tenantConfig?.tenantLogoUrl ||
-    "/logo22.png";
+    tenantConfig?.logoDarkUrl || tenantConfig?.logoUrl ||
+    tenantConfig?.tenantLogoDarkUrl || tenantConfig?.tenantLogoUrl || "/logo22.png";
 
   const statusConfig = isApproved
-    ? { label: "Dokumen Disetujui", color: "bg-green-100 text-green-700", Icon: CheckCircle }
+    ? { label: "Dokumen Disetujui", badgeClass: "badge badge-green", Icon: CheckCircle, tw: "bg-green-100 text-green-700" }
     : isRejected
-      ? { label: "Dokumen Ditolak", color: "bg-red-100 text-red-700", Icon: XCircle }
-      : { label: "Menunggu Persetujuan", color: "bg-yellow-100 text-yellow-700", Icon: Clock };
+      ? { label: "Dokumen Ditolak", badgeClass: "badge badge-red", Icon: XCircle, tw: "bg-red-100 text-red-700" }
+      : { label: "Menunggu Persetujuan", badgeClass: "badge badge-yellow", Icon: Clock, tw: "bg-yellow-100 text-yellow-700" };
 
-  const { label, color, Icon } = statusConfig;
+  const { label, Icon, tw } = statusConfig;
+
+  const details = getReimbursementDetails(reimbursement);
+  const detailsWithPhotos = details.filter((d) => getReceiptUrls(d).length > 0);
+
+  const approvalDate = new Date(
+    isApproved && reimbursement.approvedAt ? reimbursement.approvedAt : reimbursement.date
+  ).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" });
+
+  const docDate = new Date(reimbursement.date).toLocaleDateString("id-ID", {
+    day: "numeric", month: "long", year: "numeric",
+  });
 
   return (
     <div
@@ -224,190 +313,213 @@ function SlipContent({
       className="overflow-hidden rounded-xl border border-gray-200 bg-white text-gray-800"
       style={{ backgroundColor: "#fff", color: "#1f2937" }}
     >
+      {/* ── SLIP-HEADER ── */}
       <div
-        className="px-8 py-6 text-white"
-        style={{ background: "linear-gradient(90deg, #1e3a8a 0%, #1d4ed8 100%)" }}
+        className="slip-header px-8 py-6 text-white"
+        style={{ background: "linear-gradient(90deg,#1e3a8a 0%,#1d4ed8 100%)" }}
       >
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-12 items-center overflow-hidden">
-              <img
-                src={companyLogo}
-                alt={`Logo ${companyName}`}
-                className="max-h-12 max-w-24 object-contain"
-              />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold tracking-wide">{companyName}</h1>
-              <p className="text-sm text-blue-200">Human Resources Department</p>
-            </div>
+        <div className="slip-header-left flex items-center gap-3">
+          <img src={companyLogo} alt={`Logo ${companyName}`} className="slip-header-logo max-h-12 max-w-24 object-contain" />
+          <div>
+            <div className="slip-header-company text-xl font-bold">{companyName}</div>
+            <div className="slip-header-dept text-sm text-blue-200">Human Resources Department</div>
           </div>
-          <div className="text-right">
-            <p className="text-xs font-semibold uppercase tracking-widest text-blue-200">
-              Bukti Reimbursement
-            </p>
-            <p className="text-lg font-bold">
-              {new Date(reimbursement.date).toLocaleDateString("id-ID", {
-                day: "numeric",
-                month: "long",
-                year: "numeric",
-              })}
-            </p>
-          </div>
+        </div>
+        <div className="slip-header-right text-right">
+          <div className="slip-header-label text-xs font-semibold uppercase tracking-widest text-blue-200">Bukti Reimbursement</div>
+          <div className="slip-header-date text-lg font-bold">{docDate}</div>
         </div>
       </div>
 
-        <div className="border-b border-blue-100 bg-blue-50 px-8 py-5">
-        <div className="flex items-start justify-between gap-6">
-          <div className="min-w-0 flex-1">
-            <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-gray-500">Nama Karyawan</p>
-            <p className="text-base font-bold text-gray-900">{reimbursement.user?.name ?? "-"}</p>
+      {/* ── INFO KARYAWAN ── */}
+      <div className="slip-info border-b border-blue-100 bg-blue-50 px-8 py-5">
+        <div className="slip-info-row flex items-start justify-between gap-6">
+          <div className="slip-info-col flex-1">
+            <div className="slip-info-label mb-1 text-xs font-semibold uppercase tracking-wider text-gray-500">Nama Karyawan</div>
+            <div className="slip-info-value text-base font-bold text-gray-900">{reimbursement.user?.name ?? "-"}</div>
           </div>
-          <div className="min-w-0 flex-1">
-            <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-gray-500">Jabatan / Departemen</p>
-            <p className="text-base font-semibold text-gray-800">
+          <div className="slip-info-col flex-1">
+            <div className="slip-info-label mb-1 text-xs font-semibold uppercase tracking-wider text-gray-500">Jabatan / Departemen</div>
+            <div className="slip-info-value-sm text-base font-semibold text-gray-800">
               {reimbursement.user?.position ?? "-"} / {departmentLabel ?? "-"}
-            </p>
+            </div>
           </div>
-          <div className="min-w-0 flex-1 text-right">
-            <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${color}`}>
+          <div className="slip-info-col-right flex-1 text-right">
+            <span className={`badge inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${tw}`}>
               <Icon className="h-3.5 w-3.5" />
               {label}
             </span>
           </div>
         </div>
-        <div className="mt-5 flex items-start justify-between gap-6">
-          <div className="min-w-0 flex-1">
-            <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-gray-500">
+        <div className="slip-info-row mt-5 flex items-start justify-between gap-6">
+          <div className="slip-info-col flex-1">
+            <div className="slip-info-label mb-1 text-xs font-semibold uppercase tracking-wider text-gray-500">
               {isApproved && reimbursement.approvedAt ? "Tanggal Disetujui" : "Tanggal Dokumen"}
-            </p>
-            <p className="text-base font-semibold text-gray-800">
-              {new Date(isApproved && reimbursement.approvedAt ? reimbursement.approvedAt : reimbursement.date).toLocaleDateString("id-ID", {
-                day: "numeric",
-                month: "long",
-                year: "numeric",
-              })}
-            </p>
+            </div>
+            <div className="slip-info-value-sm text-base font-semibold text-gray-800">{approvalDate}</div>
           </div>
-          <div className="min-w-0 flex-1">
-            <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-gray-500">Nomor Referensi</p>
-            <p className="text-base font-semibold text-gray-800">{referenceNumber}</p>
+          <div className="slip-info-col flex-1">
+            <div className="slip-info-label mb-1 text-xs font-semibold uppercase tracking-wider text-gray-500">Nomor Referensi</div>
+            <div className="slip-info-value-sm text-base font-semibold text-gray-800">{referenceNumber}</div>
           </div>
           <div className="flex-1" />
         </div>
       </div>
 
-      <div className="px-8 py-5">
-        <table className="w-full">
+      {/* ── BODY ── */}
+      <div className="slip-body px-8 py-5">
+        {/* Detail klaim */}
+        <table className="tbl-detail w-full">
           <thead>
             <tr className="border-b-2 border-gray-200">
-              <th className="py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
-                Keterangan
-              </th>
-              <th className="py-2 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">
-                Detail
-              </th>
+              <th className="py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Keterangan</th>
+              <th className="right py-2 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">Detail</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             <tr>
               <td className="py-3 text-sm text-gray-700">Judul Klaim</td>
-              <td className="py-3 text-right text-sm font-medium text-gray-900">{reimbursement.title}</td>
-            </tr>
-            <tr>
-              <td className="py-3 text-sm text-gray-700">Kategori</td>
-              <td className="py-3 text-right text-sm font-medium text-gray-900">{reimbursement.category}</td>
-            </tr>
-            <tr>
-              <td className="py-3 text-sm text-gray-700">Tanggal Pengeluaran</td>
-              <td className="py-3 text-right text-sm font-medium text-gray-900">
-                {new Date(reimbursement.date).toLocaleDateString("id-ID", {
-                  weekday: "long",
-                  day: "numeric",
-                  month: "long",
-                  year: "numeric",
-                })}
-              </td>
+              <td className="bold right py-3 text-right text-sm font-medium text-gray-900">{reimbursement.title}</td>
             </tr>
             <tr>
               <td className="py-3 text-sm text-gray-700">Bank Tujuan</td>
-              <td className="py-3 text-right text-sm font-medium text-gray-900">
-                {reimbursement.bankName || "-"}
-              </td>
+              <td className="bold right py-3 text-right text-sm font-medium text-gray-900">{reimbursement.bankName || "-"}</td>
             </tr>
             <tr>
               <td className="py-3 text-sm text-gray-700">No. Rekening</td>
-              <td className="py-3 text-right text-sm font-medium text-gray-900">
-                {reimbursement.accountNumber || "-"}
-              </td>
+              <td className="bold right py-3 text-right text-sm font-medium text-gray-900">{reimbursement.accountNumber || "-"}</td>
             </tr>
-            {reimbursement.description ? (
+            {reimbursement.description && (
               <tr>
                 <td className="py-3 text-sm text-gray-700">Keterangan</td>
-                <td className="py-3 text-right text-sm text-gray-600">{reimbursement.description}</td>
+                <td className="right py-3 text-right text-sm text-gray-600">{reimbursement.description}</td>
               </tr>
-            ) : null}
+            )}
           </tbody>
         </table>
 
-        <div className="mt-4 rounded-xl bg-gradient-to-r from-blue-900 to-blue-700 p-4">
+        {/* Rincian pengeluaran */}
+        <div className="mt-5">
+          <h3 className="section-title mb-2 text-sm font-semibold">Rincian Pengeluaran</h3>
+          <table className="tbl-detail w-full text-sm">
+            <thead>
+              <tr className="border-b text-left text-xs text-gray-500">
+                <th className="py-2 pr-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Kategori</th>
+                <th className="py-2 pr-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Tanggal</th>
+                <th className="right py-2 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">Nominal</th>
+              </tr>
+            </thead>
+            <tbody>
+              {details.map((detail, i) => (
+                <tr key={detail.id || i} className="border-b border-gray-100">
+                  <td className="py-3 pr-3 text-sm">{detail.category}</td>
+                  <td className="py-3 pr-3 text-sm">{formatDateId(detail.date)}</td>
+                  <td className="bold right py-3 text-right text-sm tabular-nums font-semibold">{formatCurrency(detail.amount)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Total */}
+        <div
+          className="total-box mt-4 rounded-xl p-4"
+          style={{ background: "linear-gradient(90deg,#1e3a8a 0%,#1d4ed8 100%)" }}
+        >
           <div className="flex items-center justify-between text-white">
             <div>
-              <p className="text-sm font-medium text-blue-100">Total Klaim</p>
-              <p className="mt-0.5 text-xs text-blue-200">Jumlah yang diklaim karyawan</p>
+              <div className="total-box-label text-sm font-medium text-blue-100">Total Pengeluaran</div>
+              <div className="total-box-sub mt-0.5 text-xs text-blue-200">Jumlah yang diklaim karyawan</div>
             </div>
-            <p className="text-2xl font-semibold">{formatCurrency(reimbursement.amount)}</p>
-          </div>
-        </div>
-      </div>
-
-      {reimbursement.receiptUrl ? (
-        <div className="px-8 pb-5">
-          <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500">
-            Struk / Bukti Pembayaran
-          </p>
-          {reimbursement.receiptUrl.endsWith(".pdf") ? (
-            <a
-              href={reimbursement.receiptUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-2 text-sm text-blue-600 hover:underline"
-            >
-              <ExternalLink className="h-4 w-4" />
-              Lihat Dokumen PDF
-            </a>
-          ) : (
-            <img
-              src={reimbursement.receiptUrl}
-              alt="Struk pembayaran"
-              className="max-h-32 rounded-lg border border-gray-200 object-contain"
-            />
-          )}
-        </div>
-      ) : null}
-
-      <div className="border-t border-gray-100 px-8 pb-8 pt-2">
-        <div className="mt-6 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3">
-          <p className="text-xs font-semibold uppercase tracking-wider text-blue-700">
-            Validasi Dokumen
-          </p>
-          <div className="mt-2 grid gap-2 text-sm text-slate-700">
-            <p>
-              Dokumen ini valid berdasarkan status reimbursement di sistem:{" "}
-              <span className="font-semibold">{label}</span>.
-            </p>
-            <p>
-              Waktu slip dibuka/dicetak:{" "}
-              <span className="font-semibold">{generatedAtLabel}</span>.
-            </p>
+            <div className="total-box-amount text-2xl font-semibold">{formatCurrency(reimbursement.amount)}</div>
           </div>
         </div>
 
-        <p className="mt-6 text-center text-xs text-gray-400">
+        {/* Validasi */}
+        <div className="validasi mt-6 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3">
+          <div className="validasi-title text-xs font-semibold uppercase tracking-wider text-blue-700">Validasi Dokumen</div>
+          <div className="mt-2 grid gap-1 text-sm text-slate-700">
+            <p>Dokumen ini valid berdasarkan status reimbursement di sistem: <span className="font-semibold">{label}</span>.</p>
+            <p>Waktu slip dibuka/dicetak: <span className="font-semibold">{generatedAtLabel}</span>.</p>
+          </div>
+        </div>
+
+        <p className="footer-note mt-6 text-center text-xs text-gray-400">
           Dokumen ini dibuat secara otomatis oleh sistem HR {companyName}.
           {companyUrl ? ` Informasi perusahaan: ${companyUrl}.` : ""}
         </p>
       </div>
+
+      {/* ── LAMPIRAN FOTO (halaman baru, foto natural aspect ratio) ── */}
+      {detailsWithPhotos.length > 0 && (
+        <div
+          className="lampiran-section px-8 py-6"
+          style={{ pageBreakBefore: "always", breakBefore: "page" }}
+        >
+          <h2 className="lampiran-title mb-1 text-base font-bold text-gray-900">Lampiran Foto Bukti</h2>
+          <p className="lampiran-sub mb-6 text-xs text-gray-500">
+            Foto-foto di bawah ini merupakan bukti pengeluaran yang dilampirkan oleh karyawan.
+          </p>
+
+          {detailsWithPhotos.map((detail, dIdx) => {
+            const urls = getReceiptUrls(detail);
+            return (
+              <div key={detail.id || dIdx} className="expense-group mb-8">
+                {/* Bar info kategori */}
+                <div className="expense-group-bar mb-3 flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-2">
+                  <span
+                    className="expense-badge rounded px-2 py-0.5 text-[10px] font-bold uppercase text-white"
+                    style={{ background: "#1d4ed8" }}
+                  >
+                    {detail.category}
+                  </span>
+                  <span className="expense-date text-sm text-gray-700">{formatDateId(detail.date)}</span>
+                  <span className="expense-amount ml-auto text-sm font-semibold text-gray-900">{formatCurrency(detail.amount)}</span>
+                </div>
+
+                {/* Foto — stacked vertikal, natural aspect ratio */}
+                <div className="flex flex-col gap-4">
+                  {urls.map((url, fIdx) => (
+                    <div
+                      key={`${url}-${fIdx}`}
+                      className="photo-card overflow-hidden rounded-xl border border-gray-200 shadow-sm"
+                      style={{ pageBreakInside: "avoid", breakInside: "avoid" }}
+                    >
+                      <div className="photo-card-header border-b border-gray-100 bg-gray-50 px-3 py-1.5">
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+                          Foto Bukti {fIdx + 1}
+                        </span>
+                      </div>
+                      <div className="photo-card-body p-3 text-center">
+                        <img
+                          src={url}
+                          alt={`Bukti ${dIdx + 1} - Foto ${fIdx + 1}`}
+                          className="mx-auto block"
+                          style={{
+                            maxWidth: "100%",
+                            width: "auto",
+                            height: "auto",
+                            objectFit: "contain",
+                            borderRadius: "6px",
+                            display: "block",
+                          }}
+                          onError={(e) => {
+                            const t = e.currentTarget as HTMLImageElement;
+                            const wrapper = t.parentElement;
+                            if (wrapper) {
+                              wrapper.innerHTML = `<div class="photo-error flex h-20 items-center justify-center rounded-lg bg-gray-100 text-sm text-gray-400">Gagal memuat foto bukti ${fIdx + 1}</div>`;
+                            }
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

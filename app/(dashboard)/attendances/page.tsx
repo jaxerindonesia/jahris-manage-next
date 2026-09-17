@@ -7,7 +7,11 @@ import DetailData from "./components/detail-data";
 import { usePermission } from "@/lib/helper/check-role";
 import { haversineKm } from "@/lib/helper/attendance";
 import { parseApiError } from "@/lib/helper/response-api";
-import { getJakartaDayKey } from "@/lib/helper/date";
+import { getJakartaDayKey, getJakartaDayRange } from "@/lib/helper/date";
+import ExportPeriodDialog from "./components/export-period-dialog";
+import type { AttendanceExportPeriod } from "./types";
+import type { AttendanceOvertimeDto } from "@/lib/dto/attendance-overtime";
+import OvertimeConfirmationDialog from "./components/overtime-confirmation-dialog";
 import { ensureFaceModelLoaded } from "@/lib/helper/face-models";
 import FaceRecognitionModal from "./components/face-recognition-modal";
 import { loadAndCacheFaceDescriptor } from "@/lib/helper/face-reference-cache";
@@ -20,6 +24,7 @@ type AttendanceConfigState = {
   officeEndTime: string;
   lateToleranceMinutes: number;
   lateDeductionAmount: number;
+  overtimeThresholdHours: number;
   breakEnabled: boolean;
   breakFaceCaptureEnabled: boolean;
   workingDays: string[];
@@ -37,6 +42,7 @@ const DEFAULT_ATTENDANCE_CONFIG: AttendanceConfigState = {
   officeEndTime: "17:00",
   lateToleranceMinutes: 15,
   lateDeductionAmount: 0,
+  overtimeThresholdHours: 2,
   breakEnabled: false,
   breakFaceCaptureEnabled: false,
   workingDays: ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"],
@@ -84,6 +90,8 @@ export default function Page() {
   const [currentDateLabel, setCurrentDateLabel] = useState("");
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+  const [showExportPeriod, setShowExportPeriod] = useState(false);
+  const [overtimeSuggestion, setOvertimeSuggestion] = useState<AttendanceOvertimeDto | null>(null);
 
   const [showAttendanceConfig, setShowAttendanceConfig] = useState(false);
   const [attendanceConfig, setAttendanceConfig] = useState<AttendanceConfigState>(DEFAULT_ATTENDANCE_CONFIG);
@@ -269,6 +277,7 @@ export default function Page() {
       const json = await res.json();
       const config = json?.data || DEFAULT_ATTENDANCE_CONFIG;
       setAttendanceConfig({
+        overtimeThresholdHours: Number(config.overtimeThresholdHours ?? 2),
         officeStartTime: config.officeStartTime || "09:00",
         officeEndTime: config.officeEndTime || "17:00",
         lateToleranceMinutes: Number(config.lateToleranceMinutes ?? 15),
@@ -351,15 +360,24 @@ export default function Page() {
     }
   }, []);
 
-  const handleExport = useCallback(async () => {
+  const handleExport = useCallback(async ({ startDate, endDate }: AttendanceExportPeriod) => {
+    if (isExporting || !checkRole("attendances", "export")) return;
+    if (!startDate || !endDate || startDate > endDate) {
+      toast.error("Pilih rentang tanggal yang valid");
+      return;
+    }
     try {
       setIsExporting(true);
+      const startUtc = getJakartaDayRange(new Date(`${startDate}T00:00:00+07:00`)).startUtc;
+      const endUtc = getJakartaDayRange(new Date(`${endDate}T00:00:00+07:00`)).endUtc;
 
       let allData: AttendanceDto[] = [];
 
       if (["Super Admin", "Admin"].includes(userData.role)) {
         const params = new URLSearchParams();
         params.set("limit", "999999");
+        params.set("startDate", startUtc.toISOString());
+        params.set("endDate", endUtc.toISOString());
         if (searchTerm) params.set("search", searchTerm);
         if (filterStatus !== "all") params.set("status", filterStatus);
 
@@ -372,6 +390,8 @@ export default function Page() {
         const params = new URLSearchParams();
         params.set("page", "1");
         params.set("limit", "999999");
+        params.set("startDate", startUtc.toISOString());
+        params.set("endDate", endUtc.toISOString());
         if (filterStatus !== "all") params.set("status", filterStatus);
 
         const res = await fetch(`/api/attendances/user/${userData.id}?${params.toString()}`);
@@ -381,22 +401,28 @@ export default function Page() {
         allData = json.data || [];
       }
 
+      if (allData.length === 0) {
+        toast.info("Tidak ada data kehadiran untuk periode dan filter yang dipilih");
+        return;
+      }
+
       const XLSX = await import("xlsx");
       const rows: Array<Record<string, string>> = allData.map((record) => {
         const tanggal = new Date(record.date).toLocaleDateString("id-ID", {
+          timeZone: "Asia/Jakarta",
           weekday: "short",
           year: "numeric",
           month: "short",
           day: "numeric",
         });
         const checkIn = record.checkIn
-          ? new Date(record.checkIn).toLocaleTimeString("id-ID", {
+          ? new Date(record.checkIn).toLocaleTimeString("id-ID", { timeZone: "Asia/Jakarta",
             hour: "2-digit",
             minute: "2-digit",
           })
           : "-";
         const checkOut = record.checkOut
-          ? new Date(record.checkOut).toLocaleTimeString("id-ID", {
+          ? new Date(record.checkOut).toLocaleTimeString("id-ID", { timeZone: "Asia/Jakarta",
             hour: "2-digit",
             minute: "2-digit",
           })
@@ -411,13 +437,13 @@ export default function Page() {
           "Check In": checkIn,
           "Check Out": checkOut,
           "Break In": record.breakSessions?.[0]?.breakIn
-            ? new Date(record.breakSessions[0].breakIn).toLocaleTimeString("id-ID", {
+            ? new Date(record.breakSessions[0].breakIn).toLocaleTimeString("id-ID", { timeZone: "Asia/Jakarta",
               hour: "2-digit",
               minute: "2-digit",
             })
             : "-",
           "Break Out": getLastBreakSession(record)?.breakOut
-            ? new Date(getLastBreakSession(record)?.breakOut as string).toLocaleTimeString("id-ID", {
+            ? new Date(getLastBreakSession(record)?.breakOut as string).toLocaleTimeString("id-ID", { timeZone: "Asia/Jakarta",
               hour: "2-digit",
               minute: "2-digit",
             })
@@ -451,8 +477,9 @@ export default function Page() {
       }));
       worksheet["!cols"] = colWidths;
 
-      const fileName = `data-kehadiran-${new Date().toISOString().split("T")[0]}.xlsx`;
+      const fileName = `rekap-kehadiran-${startDate}_${endDate}.xlsx`;
       XLSX.writeFile(workbook, fileName);
+      setShowExportPeriod(false);
 
       toast.success(`Berhasil mengexport ${allData.length} data kehadiran`);
     } catch (error) {
@@ -460,7 +487,7 @@ export default function Page() {
     } finally {
       setIsExporting(false);
     }
-  }, [filterStatus, searchTerm, userData.id, userData.role]);
+  }, [checkRole, isExporting, filterStatus, searchTerm, userData.id, userData.role]);
 
   // ── Raw check-in / check-out (called after face verified) ──────────────
   const doCheckIn = useCallback(async (faceCaptureBase64: string) => {
@@ -632,6 +659,8 @@ export default function Page() {
       );
 
       toast.success("Berhasil Check Out");
+      const result = await res.json();
+      if (result.overtimeSuggestion) setOvertimeSuggestion(result.overtimeSuggestion);
       fetchAttendance(userData);
       fetchTodayAttendance(userData.id);
     } catch (error) {
@@ -796,7 +825,7 @@ export default function Page() {
         actions: {
           checkRole,
           isExporting,
-          onExport: handleExport,
+          onExport: () => setShowExportPeriod(true),
           onBreakCheckIn: handleBreakCheckIn,
           onBreakCheckOut: handleBreakCheckOut,
           onCheckIn: handleCheckIn,
@@ -838,7 +867,6 @@ export default function Page() {
       handleBreakCheckOut,
       handleCheckIn,
       handleCheckOut,
-      handleExport,
       hasBreakSession,
       isAdmin,
       isExporting,
@@ -989,6 +1017,14 @@ export default function Page() {
         onPageChange={setCurrentPage}
         renderActions={(row) => renderActions({ row, checkRole, onDelete: handleDelete, onView: setDetailItem, deleteId, setDeleteId, })}
       />
+
+      {showExportPeriod && checkRole("attendances", "export") && (
+        <ExportPeriodDialog loading={isExporting} onOpenChange={setShowExportPeriod} onConfirm={handleExport} />
+      )}
+
+      {overtimeSuggestion && (
+        <OvertimeConfirmationDialog suggestion={overtimeSuggestion} onClose={() => setOvertimeSuggestion(null)} />
+      )}
 
       {detailItem && (
         <DetailData

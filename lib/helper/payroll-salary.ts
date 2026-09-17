@@ -10,8 +10,10 @@ export async function getPayrollSalarySummary(params: {
   userId: string;
   month: number;
   year: number;
+  startDate?: Date | string | null;
+  endDate?: Date | string | null;
 }): Promise<PayrollSalarySummaryDto & { tenantId: string | null }> {
-  const { tenantId, userId, month, year } = params;
+  const { tenantId, userId, month, year, startDate: paramStart, endDate: paramEnd } = params;
   if (!userId || month < 1 || month > 12 || year < 1) {
     throw new Error("Periode payroll tidak valid");
   }
@@ -34,14 +36,20 @@ export async function getPayrollSalarySummary(params: {
   const salaryRate = Number(user.salary || 0);
   const salaryType = user.salaryType === "daily" ? "daily" : "monthly";
 
-  const startDate = new Date(year, month - 1, 1);
-  const endDate = new Date(year, month, 1);
+  const rangeStart = paramStart ? new Date(paramStart) : new Date(year, month - 1, 1);
+  rangeStart.setHours(0, 0, 0, 0);
+
+  const rangeEnd = paramEnd ? new Date(paramEnd) : new Date(year, month, 1);
+  if (paramEnd) {
+    rangeEnd.setHours(23, 59, 59, 999);
+  }
+
   const attendances = await prisma.attendance.findMany({
     where: {
       userId,
       attendanceDay: {
-        gte: startDate,
-        lt: endDate,
+        gte: rangeStart,
+        ...(paramEnd ? { lte: rangeEnd } : { lt: rangeEnd }),
       },
     },
     select: { status: true },

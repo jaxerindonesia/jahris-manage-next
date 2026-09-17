@@ -13,6 +13,7 @@ interface AttendanceConfig {
   officeEndTime: string;
   lateToleranceMinutes: number;
   lateDeductionAmount: number;
+  overtimeThresholdHours: number;
   breakEnabled: boolean;
   breakFaceCaptureEnabled: boolean;
   workingDays: string[];
@@ -23,6 +24,7 @@ const defaultConfig: AttendanceConfig = {
   officeEndTime: "17:00",
   lateToleranceMinutes: 15,
   lateDeductionAmount: 0,
+  overtimeThresholdHours: 2,
   breakEnabled: false,
   breakFaceCaptureEnabled: false,
   workingDays: ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"],
@@ -53,6 +55,7 @@ export default function ModalAttendanceConfig({
       const json = await res.json();
       const data = json.data || defaultConfig;
       setForm({
+        overtimeThresholdHours: Number(data.overtimeThresholdHours ?? 2),
         officeStartTime: data.officeStartTime || defaultConfig.officeStartTime,
         officeEndTime: data.officeEndTime || defaultConfig.officeEndTime,
         lateToleranceMinutes: Number(
@@ -89,6 +92,10 @@ export default function ModalAttendanceConfig({
   }, [initialConfig]);
 
   const save = async () => {
+    if (!Number.isFinite(form.overtimeThresholdHours) || form.overtimeThresholdHours < 0 || form.overtimeThresholdHours > 24) {
+      toast.error("Minimal lembur harus antara 0 dan 24 jam");
+      return;
+    }
     if (form.lateToleranceMinutes < 0) {
       toast.error("Toleransi terlambat tidak boleh negatif");
       return;
@@ -132,6 +139,16 @@ export default function ModalAttendanceConfig({
         </DialogHeader>
 
         <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="overtime-threshold">Minimal Lembur (jam)</Label>
+            <Input id="overtime-threshold" type="number" min={0} max={24} step={0.5}
+              value={form.overtimeThresholdHours}
+              onChange={(event) => setForm((current) => ({ ...current, overtimeThresholdHours: Number(event.target.value) }))} />
+            <p className="text-xs text-muted-foreground">
+              Tampilkan konfirmasi lembur saat checkout melewati akhir jadwal sebanyak jam ini.
+              Contoh: 2 jam, jadwal selesai 17.00, konfirmasi muncul mulai 19.00. Isi 0 untuk menonaktifkan.
+            </p>
+          </div>
           <div className="space-y-1.5">
             <Label>Toleransi Terlambat (menit)</Label>
             <Input

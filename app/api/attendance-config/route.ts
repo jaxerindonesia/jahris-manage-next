@@ -12,6 +12,7 @@ const DEFAULT_CONFIG = {
   officeEndTime: "17:00",
   lateToleranceMinutes: 15,
   lateDeductionAmount: 0,
+  overtimeThresholdHours: 2,
   breakEnabled: false,
   breakFaceCaptureEnabled: false,
   workingDays: ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"],
@@ -45,7 +46,7 @@ export async function GET() {
     const scopedTenantId = ensureTenantScope(auth.user);
 
     const cfg = await prisma.attendanceConfig.findFirst({
-      where: scopedTenantId ? { tenantId: scopedTenantId } : {},
+      where: { tenantId: scopedTenantId },
       orderBy: { updatedAt: "desc" },
     });
     const workSchedule = await resolveActiveWorkSchedule(
@@ -88,6 +89,10 @@ export async function PUT(req: NextRequest) {
     const officeEndTime = String(body.officeEndTime || "").trim();
     const lateToleranceMinutes = Number(body.lateToleranceMinutes);
     const lateDeductionAmount = Number(body.lateDeductionAmount);
+    const overtimeThresholdHours = Number(body.overtimeThresholdHours ?? 2);
+    if (!Number.isFinite(overtimeThresholdHours) || overtimeThresholdHours < 0 || overtimeThresholdHours > 24) {
+      return NextResponse.json({ message: "Minimal lembur harus antara 0 dan 24 jam" }, { status: 400 });
+    }
     const breakEnabled = Boolean(body.breakEnabled);
     const breakFaceCaptureEnabled = Boolean(body.breakFaceCaptureEnabled);
     const workingDaysInput: unknown[] = Array.isArray(body.workingDays)
@@ -127,7 +132,7 @@ export async function PUT(req: NextRequest) {
     }
 
     const existing = await prisma.attendanceConfig.findFirst({
-      where: scopedTenantId ? { tenantId: scopedTenantId } : {},
+      where: { tenantId: scopedTenantId },
       orderBy: { updatedAt: "desc" },
     });
 
@@ -136,6 +141,7 @@ export async function PUT(req: NextRequest) {
       officeEndTime,
       lateToleranceMinutes,
       lateDeductionAmount,
+      overtimeThresholdHours,
       breakEnabled,
       breakFaceCaptureEnabled,
       workingDays,
