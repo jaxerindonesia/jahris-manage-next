@@ -16,6 +16,8 @@ import { columnFormats, headerToolbar, ITEMS_PER_PAGE, renderActions, STATUS_LAB
 import DynamicPage from "@/components/dynamic-page";
 import SummaryCard from "./components/summary-card";
 import { parseApiError } from "@/lib/helper/response-api";
+import { getReimbursementDetails, getReceiptUrls } from "@/lib/helper/reimbursement";
+import { formatDateId } from "@/lib/helper/date";
 
 export default function Page() {
   const { checkRole } = usePermission();
@@ -209,6 +211,20 @@ export default function Page() {
       const worksheet = XLSX.utils.json_to_sheet(rows);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "Data Reimbursement");
+
+      const detailRows = allData.flatMap((claim) => getReimbursementDetails(claim).map((detail, index) => ({
+        "Nomor Referensi": claim.referenceNumber || claim.id,
+        "Nama Karyawan": claim.user?.name || "-",
+        "Judul Klaim": claim.title,
+        "Rincian": index + 1,
+        "Kategori": detail.category,
+        "Tanggal Pengeluaran": formatDateId(detail.date),
+        "Nominal": detail.amount,
+        "Bukti": getReceiptUrls(detail).join("\n") || "-",
+      })));
+      const detailSheet = XLSX.utils.json_to_sheet(detailRows);
+      detailSheet["!cols"] = [{ wch: 24 }, { wch: 24 }, { wch: 36 }, { wch: 10 }, { wch: 24 }, { wch: 24 }, { wch: 18 }, { wch: 45 }];
+      XLSX.utils.book_append_sheet(workbook, detailSheet, "Rincian Pengeluaran");
 
       // Auto column width
       type Row = (typeof rows)[number];

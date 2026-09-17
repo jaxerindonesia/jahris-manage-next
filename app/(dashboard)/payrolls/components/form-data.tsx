@@ -55,6 +55,18 @@ export default function FormData({
   const [calculationSummary, setCalculationSummary] =
     useState<PayrollCalculationSummaryDto | null>(null);
   const [formData, setFormData] = useState<PayrollDto>(createDefaultFormData);
+  const [periodMode, setPeriodMode] = useState<"month" | "range">("month");
+  const [rangeStartDate, setRangeStartDate] = useState<string>(() => {
+    const d = new Date();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    return `${d.getFullYear()}-${m}-01`;
+  });
+  const [rangeEndDate, setRangeEndDate] = useState<string>(() => {
+    const d = new Date();
+    const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    return `${d.getFullYear()}-${m}-${String(lastDay).padStart(2, "0")}`;
+  });
 
   const computedAllowances = (formData.componentValues || [])
     .filter((item) => item.typeSnapshot === "EARNING")
@@ -152,9 +164,11 @@ export default function FormData({
     userId: string;
     month: number;
     year: number;
+    startDate?: string;
+    endDate?: string;
     sourceValues?: PayrollComponentValueDto[];
   }) => {
-    const { userId, month, year, sourceValues } = params;
+    const { userId, month, year, startDate, endDate, sourceValues } = params;
 
     if (!userId || !month || !year) {
       setOvertimeAmount(0);
@@ -177,6 +191,8 @@ export default function FormData({
         month: String(month),
         year: String(year),
       });
+      if (startDate) searchParams.set("startDate", startDate);
+      if (endDate) searchParams.set("endDate", endDate);
       const res = await fetch(
         `/api/payrolls/calculation-summary?${searchParams.toString()}`,
       );
@@ -254,6 +270,8 @@ export default function FormData({
           ...formData,
           allowances: computedAllowances,
           deductions: computedDeductions,
+          startDate: periodMode === "range" ? rangeStartDate : undefined,
+          endDate: periodMode === "range" ? rangeEndDate : undefined,
         }),
       });
 
@@ -330,10 +348,13 @@ export default function FormData({
               <EmployeeSearchSelect
                 value={formData.userId || ""}
                 onChange={(val) => {
+                  const end = new Date(rangeEndDate);
                   void fetchPayrollSummary({
                     userId: val,
-                    month: Number(formData.month || createDefaultFormData().month),
-                    year: Number(formData.year || createDefaultFormData().year),
+                    month: periodMode === "range" ? end.getMonth() + 1 : Number(formData.month || createDefaultFormData().month),
+                    year: periodMode === "range" ? end.getFullYear() : Number(formData.year || createDefaultFormData().year),
+                    startDate: periodMode === "range" ? rangeStartDate : undefined,
+                    endDate: periodMode === "range" ? rangeEndDate : undefined,
                     sourceValues: formData.componentValues,
                   });
                 }}
@@ -341,51 +362,159 @@ export default function FormData({
               />
             </div>
 
-            {/* Period */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="grid gap-2">
-                <Label htmlFor="month">Bulan</Label>
-                <Select
-                  value={String(formData.month)}
-                  onValueChange={(value) =>
-                    void fetchPayrollSummary({
-                      userId: formData.userId || "",
-                      month: Number(value),
-                      year: Number(formData.year || createDefaultFormData().year),
-                      sourceValues: formData.componentValues,
-                    })
-                  }
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Pilih Bulan" />
-                  </SelectTrigger>
+            {/* Period Selection */}
+            <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/50 p-3.5 dark:border-slate-800 dark:bg-slate-900/30">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <Label className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+                  Periode Gaji
+                </Label>
+                <div className="inline-flex rounded-lg bg-slate-200/80 p-0.5 dark:bg-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPeriodMode("month");
+                      void fetchPayrollSummary({
+                        userId: formData.userId || "",
+                        month: Number(formData.month || createDefaultFormData().month),
+                        year: Number(formData.year || createDefaultFormData().year),
+                        sourceValues: formData.componentValues,
+                      });
+                    }}
+                    className={`rounded-md px-3 py-1 text-xs font-medium transition-all ${
+                      periodMode === "month"
+                        ? "bg-white text-blue-600 shadow-sm dark:bg-slate-700 dark:text-blue-400"
+                        : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
+                    }`}
+                  >
+                    By Bulan
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPeriodMode("range");
+                      const end = new Date(rangeEndDate);
+                      void fetchPayrollSummary({
+                        userId: formData.userId || "",
+                        month: end.getMonth() + 1,
+                        year: end.getFullYear(),
+                        startDate: rangeStartDate,
+                        endDate: rangeEndDate,
+                        sourceValues: formData.componentValues,
+                      });
+                    }}
+                    className={`rounded-md px-3 py-1 text-xs font-medium transition-all ${
+                      periodMode === "range"
+                        ? "bg-white text-blue-600 shadow-sm dark:bg-slate-700 dark:text-blue-400"
+                        : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
+                    }`}
+                  >
+                    By Range Tanggal
+                  </button>
+                </div>
+              </div>
 
-                  <SelectContent>
-                    {months.map((m) => (
-                      <SelectItem key={m.value} value={String(m.value)}>
-                        {m.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="year">Tahun</Label>
-                <Input
-                  id="year"
-                  type="number"
-                  value={formData.year}
-                  onChange={(e) =>
-                    void fetchPayrollSummary({
-                      userId: formData.userId || "",
-                      month: Number(formData.month || createDefaultFormData().month),
-                      year: parseInt(e.target.value),
-                      sourceValues: formData.componentValues,
-                    })
-                  }
-                  required
-                />
-              </div>
+              {periodMode === "month" ? (
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="grid gap-2">
+                    <Label htmlFor="month">Bulan</Label>
+                    <Select
+                      value={String(formData.month)}
+                      onValueChange={(value) =>
+                        void fetchPayrollSummary({
+                          userId: formData.userId || "",
+                          month: Number(value),
+                          year: Number(formData.year || createDefaultFormData().year),
+                          sourceValues: formData.componentValues,
+                        })
+                      }
+                    >
+                      <SelectTrigger id="month" className="w-full bg-white dark:bg-slate-800">
+                        <SelectValue placeholder="Pilih Bulan" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {months.map((m) => (
+                          <SelectItem key={m.value} value={String(m.value)}>
+                            {m.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="year">Tahun</Label>
+                    <Input
+                      id="year"
+                      type="number"
+                      value={formData.year}
+                      onChange={(e) =>
+                        void fetchPayrollSummary({
+                          userId: formData.userId || "",
+                          month: Number(formData.month || createDefaultFormData().month),
+                          year: parseInt(e.target.value) || new Date().getFullYear(),
+                          sourceValues: formData.componentValues,
+                        })
+                      }
+                      className="bg-white dark:bg-slate-800"
+                      required
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div className="grid gap-2">
+                      <Label htmlFor="rangeStartDate">Tanggal Mulai</Label>
+                      <Input
+                        id="rangeStartDate"
+                        type="date"
+                        value={rangeStartDate}
+                        onChange={(e) => {
+                          const newStart = e.target.value;
+                          setRangeStartDate(newStart);
+                          const end = new Date(rangeEndDate);
+                          void fetchPayrollSummary({
+                            userId: formData.userId || "",
+                            month: end.getMonth() + 1,
+                            year: end.getFullYear(),
+                            startDate: newStart,
+                            endDate: rangeEndDate,
+                            sourceValues: formData.componentValues,
+                          });
+                        }}
+                        className="bg-white dark:bg-slate-800"
+                        required
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="rangeEndDate">Tanggal Selesai</Label>
+                      <Input
+                        id="rangeEndDate"
+                        type="date"
+                        value={rangeEndDate}
+                        min={rangeStartDate || undefined}
+                        onChange={(e) => {
+                          const newEnd = e.target.value;
+                          setRangeEndDate(newEnd);
+                          const end = new Date(newEnd);
+                          void fetchPayrollSummary({
+                            userId: formData.userId || "",
+                            month: end.getMonth() + 1,
+                            year: end.getFullYear(),
+                            startDate: rangeStartDate,
+                            endDate: newEnd,
+                            sourceValues: formData.componentValues,
+                          });
+                        }}
+                        className="bg-white dark:bg-slate-800"
+                        required
+                      />
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Perhitungan kehadiran dan lembur dihitung berdasarkan rentang tanggal ini. Periode slip tercatat pada bulan {months.find(m => m.value === (new Date(rangeEndDate).getMonth() + 1))?.label} {new Date(rangeEndDate).getFullYear()}.
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Salary Details */}

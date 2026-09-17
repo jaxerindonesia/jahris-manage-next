@@ -5,7 +5,7 @@ import { getExpiredAuthCookieOptions } from "@/lib/auth/cookie";
 import { isStateChangingRequest, isTrustedOrigin } from "@/lib/security/origin";
 
 const cspBase =
-  "default-src 'self'; img-src 'self' data: blob: https://s3-jaxer.tetrabit.my.id https://s3.jahris.id; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' https://s3-jaxer.tetrabit.my.id https://s3.jahris.id; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'";
+  "default-src 'self'; img-src 'self' data: blob: http://103.31.204.110:1608 https://s3-jaxer.tetrabit.my.id https://s3.jahris.id; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' https://s3-jaxer.tetrabit.my.id https://s3.jahris.id; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'";
 
 const createNonce = () => crypto.randomUUID().replace(/-/g, "");
 

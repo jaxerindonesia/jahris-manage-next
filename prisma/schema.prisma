@@ -368,6 +368,7 @@ model AttendanceConfig {
   officeEndTime           String   @map("office_end_time")
   lateToleranceMinutes    Int      @map("late_tolerance_minutes")
   lateDeductionAmount     Float    @default(0) @map("late_deduction_amount")
+  overtimeThresholdHours  Float    @default(2) @map("overtime_threshold_hours")
   breakEnabled            Boolean  @default(false) @map("break_enabled")
   breakFaceCaptureEnabled Boolean  @default(false) @map("break_face_capture_enabled")
   createdAt               DateTime @default(now()) @map("created_at")
@@ -574,11 +575,27 @@ model Reimbursement {
   tenantId        String?   @map("tenant_id") @db.Uuid
   tenant          Tenant?   @relation(fields: [tenantId], references: [id])
   user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  details         ReimbursementDetail[]
 
   @@index([tenantId])
   @@index([userId])
   @@index([referenceNumber])
   @@map("reimbursements")
+}
+
+model ReimbursementDetail {
+  id              String        @id @default(uuid()) @db.Uuid
+  reimbursementId String        @map("reimbursement_id") @db.Uuid
+  position        Int
+  category        String
+  amount          Float
+  date            DateTime
+  receiptUrl      String?       @map("receipt_url")
+  receiptUrls     String[]      @default([]) @map("receipt_urls")
+  reimbursement   Reimbursement @relation(fields: [reimbursementId], references: [id], onDelete: Cascade)
+
+  @@unique([reimbursementId, position])
+  @@map("reimbursement_details")
 }
 
 model PettyCash {

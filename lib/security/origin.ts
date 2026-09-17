@@ -17,9 +17,10 @@ export function isStateChangingRequest(method: string) {
 export function isTrustedOrigin(request: NextRequest) {
   const requestOrigin = request.nextUrl.origin;
   const configuredOrigin = process.env.NEXTAUTH_URL?.trim();
+  const additionalOrigins = process.env.TRUSTED_ORIGINS?.split(",") ?? [];
   const allowedOrigins = new Set(
-    [requestOrigin, configuredOrigin]
-      .map((value) => (value ? normalizeOrigin(value) : null))
+    [requestOrigin, configuredOrigin, ...additionalOrigins]
+      .map((value) => (value ? normalizeOrigin(value.trim()) : null))
       .filter((value): value is string => Boolean(value)),
   );
 

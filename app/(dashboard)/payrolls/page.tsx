@@ -26,9 +26,12 @@ export default function Page() {
   const [showFilterPanel, setShowFilterPanel] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
+  const [filterPeriodMode, setFilterPeriodMode] = useState<"month" | "range">("month");
   const [filterMonth, setFilterMonth] = useState<string>("all");
   const [filterYear, setFilterYear] = useState<string>("all");
   const [debouncedFilterYear, setDebouncedFilterYear] = useState<string>("all");
+  const [filterStartDate, setFilterStartDate] = useState<string>("");
+  const [filterEndDate, setFilterEndDate] = useState<string>("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [isExporting, setIsExporting] = useState(false);
 
@@ -43,11 +46,16 @@ export default function Page() {
   const activeFilterCount = useMemo(() => {
     let count = 0;
     if (searchTerm) count++;
-    if (filterMonth !== "all") count++;
-    if (filterYear !== "all") count++;
+    if (filterPeriodMode === "month") {
+      if (filterMonth !== "all") count++;
+      if (filterYear !== "all") count++;
+    } else {
+      if (filterStartDate) count++;
+      if (filterEndDate) count++;
+    }
     if (filterStatus !== "all") count++;
     return count;
-  }, [searchTerm, filterMonth, filterYear, filterStatus]);
+  }, [searchTerm, filterPeriodMode, filterMonth, filterYear, filterStartDate, filterEndDate, filterStatus]);
 
   const summaryCards = useMemo(() => {
     const summaryPaid = data.filter((p) => p.status === "PAID").reduce((sum, p) => sum + p.totalSalary, 0);
@@ -80,9 +88,12 @@ export default function Page() {
   }, [data, currentYear]);
 
   const clearFilters = useCallback(() => {
+    setFilterPeriodMode("month");
     setFilterMonth("all");
     setFilterYear("all");
     setDebouncedFilterYear("all");
+    setFilterStartDate("");
+    setFilterEndDate("");
     setFilterStatus("all");
     setSearchTerm("");
   }, []);
@@ -124,8 +135,13 @@ export default function Page() {
       const params = new URLSearchParams();
       params.set("limit", "999999");
       if (debouncedSearchTerm) params.set("search", debouncedSearchTerm);
-      if (filterMonth !== "all") params.set("month", filterMonth);
-      if (debouncedFilterYear !== "all") params.set("year", debouncedFilterYear);
+      if (filterPeriodMode === "month") {
+        if (filterMonth !== "all") params.set("month", filterMonth);
+        if (debouncedFilterYear !== "all") params.set("year", debouncedFilterYear);
+      } else {
+        if (filterStartDate) params.set("startDate", filterStartDate);
+        if (filterEndDate) params.set("endDate", filterEndDate);
+      }
       if (filterStatus !== "all") params.set("status", filterStatus);
 
       const res = await fetch(`/api/payrolls?${params.toString()}`);
@@ -166,7 +182,7 @@ export default function Page() {
     } finally {
       setIsExporting(false);
     }
-  }, [debouncedFilterYear, debouncedSearchTerm, filterMonth, filterStatus]);
+  }, [debouncedFilterYear, debouncedSearchTerm, filterEndDate, filterMonth, filterPeriodMode, filterStartDate, filterStatus]);
 
   const toolbar = useMemo(() => {
     return headerToolbar({
@@ -184,15 +200,21 @@ export default function Page() {
         clear: clearFilters,
         searchTerm,
         setSearchTerm,
+        periodMode: filterPeriodMode,
+        setPeriodMode: setFilterPeriodMode,
         status: filterStatus,
         setStatus: setFilterStatus,
         month: filterMonth,
         setMonth: setFilterMonth,
         year: filterYear,
         setYear: setFilterYear,
+        startDate: filterStartDate,
+        setStartDate: setFilterStartDate,
+        endDate: filterEndDate,
+        setEndDate: setFilterEndDate,
       },
     })
-  }, [searchTerm, filterStatus, filterMonth, filterYear, activeFilterCount, clearFilters, onAdd, onExport, isExporting, checkRole, showFilterPanel]);
+  }, [searchTerm, filterStatus, filterPeriodMode, filterMonth, filterYear, filterStartDate, filterEndDate, activeFilterCount, clearFilters, onAdd, onExport, isExporting, checkRole, showFilterPanel]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -201,8 +223,13 @@ export default function Page() {
       params.set("page", String(currentPage));
       params.set("limit", String(ITEMS_PER_PAGE));
       if (debouncedSearchTerm) params.set("search", debouncedSearchTerm);
-      if (filterMonth !== "all") params.set("month", filterMonth);
-      if (debouncedFilterYear !== "all") params.set("year", debouncedFilterYear);
+      if (filterPeriodMode === "month") {
+        if (filterMonth !== "all") params.set("month", filterMonth);
+        if (debouncedFilterYear !== "all") params.set("year", debouncedFilterYear);
+      } else {
+        if (filterStartDate) params.set("startDate", filterStartDate);
+        if (filterEndDate) params.set("endDate", filterEndDate);
+      }
       if (filterStatus !== "all") params.set("status", filterStatus);
 
       const res = await fetch(`/api/payrolls?${params.toString()}`);
@@ -223,7 +250,7 @@ export default function Page() {
     } finally {
       setLoading(false);
     }
-  }, [currentPage, debouncedFilterYear, debouncedSearchTerm, filterMonth, filterStatus]);
+  }, [currentPage, debouncedFilterYear, debouncedSearchTerm, filterEndDate, filterMonth, filterPeriodMode, filterStartDate, filterStatus]);
 
   const fetchDetail = useCallback(async (id: string) => {
     setLoading(true);
@@ -265,7 +292,7 @@ export default function Page() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [debouncedSearchTerm, filterMonth, debouncedFilterYear, filterStatus]);
+  }, [debouncedSearchTerm, filterPeriodMode, filterMonth, debouncedFilterYear, filterStartDate, filterEndDate, filterStatus]);
 
   return (
     <>

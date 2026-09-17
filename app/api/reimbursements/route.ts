@@ -5,9 +5,8 @@ import type { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { ensureTenantScope, requireSessionUser } from "@/lib/auth/tenant";
 import { hasPermission, requirePermission } from "@/lib/auth/permission";
-import { buildTenantStorageObjectName } from "@/lib/helper/storage";
-import { uploadBufferToMinio, BUCKET_AVATARS } from "@/lib/minio";
-import { validateAttachmentBuffer } from "@/lib/security/file-validation";
+import { randomUUID } from "node:crypto";
+import { cleanupReimbursementReceipts, prepareReimbursementDetails, ReimbursementInputError } from "@/lib/helper/reimbursement-details";
 
 function buildReimbursementReferenceNumber(id: string, createdAt: Date) {
   return `RBM-${createdAt.getFullYear()}-${id.slice(0, 8).toUpperCase()}`;
@@ -44,11 +43,11 @@ export async function GET(req: NextRequest) {
     }
 
     if (category) {
-      where.category = category;
+      where.AND = [{ OR: [{ details: { some: { category } } }, { details: { none: {} }, category }] }];
     }
 
     if (status) {
-      where.status = status;
+      where.status = { equals: status, mode: "insensitive" };
     }
 
     const [reimbursements, total] = await Promise.all([
@@ -58,6 +57,7 @@ export async function GET(req: NextRequest) {
         skip: (page - 1) * limit,
         take: limit,
         include: {
+          details: { orderBy: { position: "asc" } },
           user: {
             select: { id: true, name: true, position: true, department: true },
           },
@@ -73,7 +73,7 @@ export async function GET(req: NextRequest) {
       page,
       limit,
     });
-  } catch (error) {
+  } catch {
     return NextResponse.json(
       { message: "Failed to retrieve reimbursements data" },
       { status: 500 },
@@ -82,129 +82,48 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const uploadedUrls: string[] = [];
   try {
     const auth = await requireSessionUser();
     if (auth.error) return auth.error;
     const forbid = requirePermission(auth.user, "reimbursements", "create");
     if (forbid) return forbid;
-
-    const formData = await req.formData();
-
-    const userId = formData.get("userId") as string;
-    const title = formData.get("title") as string;
-    const category = formData.get("category") as string;
-    const amount = formData.get("amount") as string;
-    const date = formData.get("date") as string;
-    const bankName = formData.get("bankName") as string;
-    const accountNumber = formData.get("accountNumber") as string;
-    const description = formData.get("description") as string;
-    const file = formData.get("file") as File | null;
-
-    if (!userId || !title || !category || !amount || !date) {
-      return NextResponse.json(
-        { message: "Field wajib belum lengkap" },
-        { status: 400 },
-      );
-    }
-
+    const form = await req.formData();
+    const userId = String(form.get("userId") || "");
+    const title = String(form.get("title") || "").trim();
+    if (!userId || !title) throw new ReimbursementInputError("Karyawan dan judul klaim wajib diisi");
     const scopedTenantId = ensureTenantScope(auth.user);
-    const finalTenantId = scopedTenantId;
-    const canManageReimbursements = hasPermission(auth.user, "reimbursements", "update");
-    const targetUserId = canManageReimbursements ? userId : auth.user.id;
-
-    if (!canManageReimbursements && userId !== auth.user.id) {
-      return NextResponse.json(
-        { message: "Forbidden" },
-        { status: 403 },
-      );
+    const canManage = hasPermission(auth.user, "reimbursements", "update");
+    if (!canManage && userId !== auth.user.id) {
+      return NextResponse.json({ message: "Forbidden" }, { status: 403 });
     }
-
     const targetUser = await prisma.user.findFirst({
-      where: {
-        id: targetUserId,
-        deletedAt: null,
-        ...(finalTenantId ? { tenantId: finalTenantId } : {}),
-      },
-      select: { id: true },
+      where: { id: canManage ? userId : auth.user.id, deletedAt: null,
+        ...(scopedTenantId ? { tenantId: scopedTenantId } : {}) },
+      select: { id: true, tenantId: true },
     });
-    if (!targetUser) {
-      return NextResponse.json(
-        { message: "User target tidak ditemukan" },
-        { status: 404 },
-      );
-    }
-
+    if (!targetUser) return NextResponse.json({ message: "User target tidak ditemukan" }, { status: 404 });
+    const tenantId = scopedTenantId ?? targetUser.tenantId;
+    const { details, ...summary } = await prepareReimbursementDetails(form, tenantId, uploadedUrls);
+    const id = randomUUID();
     const reimbursement = await prisma.reimbursement.create({
       data: {
-        tenantId: finalTenantId,
-        userId: targetUserId,
-        title,
-        category,
-        amount: Number(amount),
-        date: new Date(date),
-        bankName: bankName?.trim() || null,
-        accountNumber: accountNumber?.trim() || null,
-        description: description || null,
-        status: "PENDING",
+        id, tenantId, userId: targetUser.id, title, ...summary,
+        referenceNumber: buildReimbursementReferenceNumber(id, new Date()),
+        bankName: String(form.get("bankName") || "").trim() || null,
+        accountNumber: String(form.get("accountNumber") || "").trim() || null,
+        description: String(form.get("description") || "").trim() || null,
+        status: "PENDING", details: { create: details },
       },
+      include: { details: { orderBy: { position: "asc" } } },
     });
-    const referenceNumber = buildReimbursementReferenceNumber(
-      reimbursement.id,
-      reimbursement.createdAt,
-    );
-    const reimbursementWithReference = await prisma.reimbursement.update({
-      where: { id: reimbursement.id },
-      data: { referenceNumber },
-    });
-
-    let receiptUrl: string | null = null;
-
-    if (file && file.size > 0) {
-      const bytes = await file.arrayBuffer();
-      const buffer = Buffer.from(bytes);
-      const validation = validateAttachmentBuffer(
-        file.name || "",
-        file.type || "application/octet-stream",
-        buffer,
-      );
-      if (!validation.ok) {
-        return NextResponse.json({ message: validation.message }, { status: 415 });
-      }
-
-      const fileName = await buildTenantStorageObjectName(
-        finalTenantId,
-        "reimbursements",
-        `receipt-${reimbursement.id}-${Date.now()}-${file.name.replace(/\s+/g, "_")}`,
-      );
-      
-      receiptUrl = await uploadBufferToMinio(
-        buffer,
-        fileName,
-        BUCKET_AVATARS,
-        validation.contentType,
-      );
-
-      await prisma.reimbursement.update({
-        where: { id: reimbursement.id },
-        data: { receiptUrl },
-      });
-    }
-
-    return NextResponse.json(
-      {
-        message: "Reimbursement berhasil dibuat",
-        data: {
-          ...reimbursementWithReference,
-          receiptUrl,
-        },
-      },
-      { status: 201 },
-    );
+    return NextResponse.json({ message: "Reimbursement berhasil dibuat", data: reimbursement }, { status: 201 });
   } catch (error) {
+    await cleanupReimbursementReceipts(uploadedUrls);
+    if (error instanceof ReimbursementInputError) {
+      return NextResponse.json({ message: error.message }, { status: 400 });
+    }
     console.error(error);
-    return NextResponse.json(
-      { message: "Failed to create reimbursement" },
-      { status: 500 },
-    );
+    return NextResponse.json({ message: "Failed to create reimbursement" }, { status: 500 });
   }
 }

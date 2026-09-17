@@ -221,13 +221,14 @@ export async function DELETE(_: Request, { params }: Params) {
         proofUrl: true,
         checkInFaceImage: true,
         checkOutFaceImage: true,
+        attendance: { select: { checkInFaceImage: true, checkOutFaceImage: true } },
       },
     });
     if (!item) return NextResponse.json({ message: "Overtime not found" }, { status: 404 });
 
     await prisma.overtime.delete({ where: { id: p.id } });
     const evidenceUrls = [item.proofUrl, item.checkInFaceImage, item.checkOutFaceImage].filter(
-      (value): value is string => Boolean(value),
+      (value): value is string => Boolean(value) && value !== item.attendance?.checkInFaceImage && value !== item.attendance?.checkOutFaceImage,
     );
     await Promise.all(
       evidenceUrls.map(async (url) => {

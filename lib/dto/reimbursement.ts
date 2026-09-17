@@ -1,3 +1,12 @@
+export interface ReimbursementDetailDto {
+    id?: string;
+    category: string;
+    amount: number;
+    date: string;
+    receiptUrl?: string | null;
+    receiptUrls?: string[];
+}
+
 export interface ReimbursementDto {
     id?: string | null;
     referenceNumber?: string | null;
@@ -10,6 +19,7 @@ export interface ReimbursementDto {
     accountNumber?: string | null;
     description?: string | null;
     receiptUrl?: string | null;
+    details?: ReimbursementDetailDto[];
     status: string;
     approvedBy?: string | null;
     approvedAt?: string | null;

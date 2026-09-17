@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle, Download, Edit, ExternalLink, Filter, Info, Plus, Printer, Receipt, Trash2, X, XCircle } from "lucide-react";
+import { CheckCircle, Download, Edit, Filter, Plus, Printer, Trash2, X, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { DefaultColumnFormat } from "@/components/dynamic-page";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -8,6 +8,8 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ReimbursementDto } from "@/lib/dto/reimbursement";
+import { getReimbursementDetails, getReceiptUrls, REIMBURSEMENT_CATEGORIES } from "@/lib/helper/reimbursement";
+import { formatDateId } from "@/lib/helper/date";
 
 export const itemsPerPageOptions = [5, 10, 25, 50, 100];
 export const ITEMS_PER_PAGE = 10;
@@ -61,15 +63,7 @@ export const STATUS_COLOR: Record<string, string> = {
 
 const modelName = "reimbursements";
 
-const CATEGORIES = [
-  "Transportasi",
-  "Akomodasi",
-  "Makan & Minum",
-  "Kesehatan",
-  "Peralatan Kerja",
-  "Komunikasi",
-  "Lainnya",
-];
+const CATEGORIES = REIMBURSEMENT_CATEGORIES;
 
 export const columnFormats: DefaultColumnFormat<ReimbursementDto>[] = [
   {
@@ -94,22 +88,17 @@ export const columnFormats: DefaultColumnFormat<ReimbursementDto>[] = [
     key: "category",
     title: "Kategori",
     textClassName: "text-slate-700 dark:text-slate-200",
-    formatter: (_value, row) => row.category || "-",
+    formatter: (_value, row) => [...new Set(getReimbursementDetails(row).map((detail) => detail.category))].join(", "),
   },
   {
     key: "date",
     title: "Tanggal Pengeluaran",
     textClassName: "text-slate-700 dark:text-slate-200",
-    formatter: (_value, row) => row.date ? new Date(row.date).toLocaleDateString("id-ID", {
-      weekday: "short",
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    }) : "-",
+    formatter: (_value, row) => [...new Set(getReimbursementDetails(row).map((detail) => formatDateId(detail.date)))].join(", "),
   },
   {
     key: "amount",
-    title: "Nominal Klaim",
+    title: "Total Pengeluaran",
     textClassName: "text-slate-700 dark:text-slate-200 font-semibold",
     formatter: (_value, row) => `Rp ${row.amount.toLocaleString("id-ID") ?? "-"}`,
   },
@@ -128,20 +117,42 @@ export const columnFormats: DefaultColumnFormat<ReimbursementDto>[] = [
   {
     key: "receiptUrl",
     title: "Bukti Pembayaran",
-    formatter: (value) =>
-      value ? (
-        <a
-          href={String(value)}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:underline dark:text-blue-400"
-        >
-          Lihat Bukti
-          <ExternalLink className="h-3.5 w-3.5" />
-        </a>
-      ) : (
-        "-"
-      ),
+    formatter: (_value, row) => {
+      const details = getReimbursementDetails(row);
+      const allUrls = details.flatMap((detail) => getReceiptUrls(detail));
+      if (!allUrls.length) return "-";
+      return (
+        <div className="flex flex-wrap gap-1.5">
+          {allUrls.map((url, i) => (
+            <a
+              key={`${i}-${url}`}
+              href={url}
+              target="_blank"
+              rel="noreferrer"
+              title={`Lihat bukti ${i + 1}`}
+              className="group relative block h-10 w-10 overflow-hidden rounded-lg border border-gray-200 shadow-sm transition-all hover:scale-105 hover:shadow-md hover:border-blue-400 dark:border-gray-600"
+            >
+              <img
+                src={url}
+                alt={`Bukti ${i + 1}`}
+                className="h-full w-full object-cover"
+                onError={(e) => {
+                  const target = e.currentTarget as HTMLImageElement;
+                  target.style.display = "none";
+                  const parent = target.parentElement;
+                  if (parent && !parent.querySelector(".fallback-icon")) {
+                    const fallback = document.createElement("div");
+                    fallback.className = "fallback-icon flex h-full w-full items-center justify-center bg-gray-100 dark:bg-gray-700 text-gray-400 text-[9px] text-center leading-tight px-0.5";
+                    fallback.textContent = `Bukti ${i + 1}`;
+                    parent.appendChild(fallback);
+                  }
+                }}
+              />
+            </a>
+          ))}
+        </div>
+      );
+    },
   },
   {
     key: "status",

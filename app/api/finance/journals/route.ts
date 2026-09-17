@@ -3,6 +3,7 @@ export const runtime = "nodejs";
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
+import { REIMBURSEMENT_JOURNAL_PREFIX } from "@/lib/helper/reimbursement-journal";
 import { ensureTenantScope, requireSessionUser } from "@/lib/auth/tenant";
 import { requirePermission } from "@/lib/auth/permission";
 import { writeAuditLog } from "@/lib/security/audit-log";
@@ -107,6 +108,9 @@ export async function POST(req: NextRequest) {
   if (forbid) return forbid;
   const body = await req.json();
   const journalNo = String(body.journalNo || "").trim();
+  if (journalNo.startsWith(REIMBURSEMENT_JOURNAL_PREFIX)) {
+    return NextResponse.json({ message: "Nomor ini khusus jurnal otomatis reimbursement." }, { status: 400 });
+  }
   const details = Array.isArray(body.details) ? body.details : [];
   const totals = calcTotals(details);
 
