@@ -6,6 +6,7 @@ import { ReimbursementDto } from "@/lib/dto/reimbursement";
 import { formatCurrency } from "@/lib/helper/format-currency";
 import { getReimbursementDetails, getReceiptUrls } from "@/lib/helper/reimbursement";
 import { formatDateId } from "@/lib/helper/date";
+import { useTenantConfig, type TenantConfig } from "@/contexts/TenantConfigContext";
 
 interface SlipReimbursementModalProps {
   open?: boolean;
@@ -14,35 +15,13 @@ interface SlipReimbursementModalProps {
   loading?: boolean;
 }
 
-type TenantConfig = {
-  companyName?: string | null;
-  companyUrl?: string | null;
-  logoUrl?: string | null;
-  logoDarkUrl?: string | null;
-  tenantName?: string | null;
-  tenantLogoUrl?: string | null;
-  tenantLogoDarkUrl?: string | null;
-};
-
 export default function SlipReimbursementModal({ open = true, ...props }: SlipReimbursementModalProps) {
   return open ? <SlipReimbursementContent {...props} /> : null;
 }
 
 function SlipReimbursementContent({ detailItem, onClose, loading = false }: SlipReimbursementModalProps) {
   const [photoLayout, setPhotoLayout] = useState<"two" | "one">("two");
-  const [tenantConfig] = useState<TenantConfig | null>(() => {
-    try {
-      const raw = localStorage.getItem("hr_user_data");
-      if (!raw) return null;
-      const parsed = JSON.parse(raw) as TenantConfig;
-      return {
-        companyName: parsed.companyName ?? parsed.tenantName ?? null,
-        companyUrl: parsed.companyUrl ?? null,
-        logoUrl: parsed.logoUrl ?? parsed.tenantLogoUrl ?? null,
-        logoDarkUrl: parsed.logoDarkUrl ?? parsed.tenantLogoDarkUrl ?? null,
-      };
-    } catch { return null; }
-  });
+  const tenantConfig = useTenantConfig();
 
   const handlePrint = () => {
     const slip = document.getElementById("reimburse-print-area");
@@ -87,7 +66,8 @@ function SlipReimbursementContent({ detailItem, onClose, loading = false }: Slip
     }
     .slip-header-left { display: flex; align-items: center; gap: 14px; }
     .slip-header-logo { display: block; width: 92px; height: 44px; object-fit: contain; object-position: center; flex-shrink: 0; }
-    .slip-header-identity { display: flex; min-height: 42px; flex-direction: column; justify-content: center; border-left: 1px solid rgba(255,255,255,.3); padding-left: 14px; }
+    .slip-header-identity { display: flex; min-height: 42px; flex-direction: column; justify-content: center; }
+    .slip-header-identity.has-logo { border-left: 1px solid rgba(255,255,255,.3); padding-left: 14px; }
     .slip-header-company { font-size: 14pt; font-weight: 700; line-height: 1.1; }
     .slip-header-dept { margin-top: 4px; font-size: 8pt; line-height: 1.1; color: #bfdbfe; }
     .slip-header-right { text-align: right; }
@@ -355,12 +335,7 @@ function SlipContent({
       : reimbursement.user?.department?.name;
 
   const companyName = tenantConfig?.companyName?.trim() || "JAXER GRUP INDONESIA";
-  const companyUrl  = tenantConfig?.companyUrl?.trim() || "";
-  const defaultCompanyLogo = "/logo_jahris_white.png";
-  const companyLogo =
-    tenantConfig?.logoDarkUrl?.trim() ||
-    tenantConfig?.logoUrl?.trim() ||
-    defaultCompanyLogo;
+  const companyLogo = tenantConfig?.logoDarkUrl?.trim();
 
   const statusConfig = isApproved
     ? { label: "Dokumen Disetujui", badgeClass: "badge badge-green", Icon: CheckCircle, tw: "bg-green-100 text-green-700" }
@@ -393,16 +368,14 @@ function SlipContent({
         style={{ background: "linear-gradient(90deg,#1e3a8a 0%,#1d4ed8 100%)" }}
       >
         <div className="slip-header-left flex items-center gap-3.5">
-          <img
-            src={companyLogo}
-            alt={`Logo ${companyName}`}
-            className="slip-header-logo block h-11 w-[92px] shrink-0 object-contain object-center"
-            onError={(event) => {
-              if (event.currentTarget.src.endsWith(defaultCompanyLogo)) return;
-              event.currentTarget.src = defaultCompanyLogo;
-            }}
-          />
-          <div className="slip-header-identity flex min-h-[42px] flex-col justify-center border-l border-white/30 pl-3.5">
+          {companyLogo && (
+            <img
+              src={companyLogo}
+              alt={`Logo ${companyName}`}
+              className="slip-header-logo block h-11 w-[92px] shrink-0 object-contain object-center"
+            />
+          )}
+          <div className={`slip-header-identity flex min-h-[42px] flex-col justify-center ${companyLogo ? "has-logo border-l border-white/30 pl-3.5" : ""}`}>
             <div className="slip-header-company text-xl leading-none font-bold">{companyName}</div>
             <div className="slip-header-dept mt-1 text-sm leading-none text-blue-200">Human Resources Department</div>
           </div>
@@ -528,7 +501,6 @@ function SlipContent({
 
         <p className="footer-note mt-6 text-center text-xs text-gray-400">
           Dokumen ini dibuat secara otomatis oleh sistem HR {companyName}.
-          {companyUrl ? ` Informasi perusahaan: ${companyUrl}.` : ""}
         </p>
       </div>
 
