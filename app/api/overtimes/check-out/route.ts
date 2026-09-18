@@ -2,14 +2,18 @@ export const runtime = "nodejs";
 
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { ensureTenantScope, requireSessionUser } from "@/lib/auth/tenant";
 import { hasPermission } from "@/lib/auth/permission";
-import { BUCKET_AVATARS, uploadBase64ToMinio, uploadBufferToMinio } from "@/lib/minio";
+import { BUCKET_AVATARS, deleteFromMinio, uploadBase64ToMinio, uploadBufferToMinio } from "@/lib/minio";
+import { completeOvertime } from "@/lib/helper/complete-overtime";
 import { buildTenantStorageObjectName } from "@/lib/helper/storage";
 import { validateAttachmentBuffer, validateBase64Image } from "@/lib/security/file-validation";
 
 export async function POST(req: Request) {
+  const uploadedUrls: string[] = [];
+  let committed = false;
   try {
     const auth = await requireSessionUser();
     if (auth.error) return auth.error;
@@ -95,6 +99,7 @@ export async function POST(req: Request) {
         BUCKET_AVATARS,
         validation.contentType,
       );
+      uploadedUrls.push(proofUrl);
     }
 
     const checkOutObjectName = await buildTenantStorageObjectName(
@@ -108,26 +113,20 @@ export async function POST(req: Request) {
       BUCKET_AVATARS,
       imageValidation.contentType,
     );
+    uploadedUrls.push(checkOutFaceImage);
 
     const now = new Date();
-    const overtimeMinutes = Math.max(
-      0,
-      Math.floor((now.getTime() - overtime.startTime.getTime()) / (1000 * 60)),
-    );
-    const checkOutLocation = checkOutLocationRaw ? JSON.parse(checkOutLocationRaw) : null;
+    const checkOutLocation = (checkOutLocationRaw ? JSON.parse(checkOutLocationRaw) : null) ?? Prisma.JsonNull;
 
-    const updated = await prisma.overtime.update({
-      where: { id: overtime.id },
-      data: {
-        endTime: now,
-        overtimeMinutes,
-        requestedMinutes: overtimeMinutes,
-        checkOutLocation,
-        checkOutFaceImage,
-        proofUrl,
-        status: "PENDING",
-      },
-    });
+    const updated = await prisma.$transaction((tx) => completeOvertime(tx, overtime.id, now, {
+      checkOutLocation,
+      checkOutFaceImage,
+      proofUrl,
+    }));
+    if (!updated) {
+      return NextResponse.json({ message: "Lembur sudah checkout atau statusnya berubah" }, { status: 409 });
+    }
+    committed = true;
 
     return NextResponse.json({
       message: "Check out lembur berhasil",
@@ -139,5 +138,7 @@ export async function POST(req: Request) {
       { message: error instanceof Error ? error.message : "Gagal check out lembur" },
       { status: 500 },
     );
+  } finally {
+    if (!committed) await Promise.all(uploadedUrls.map((url) => deleteFromMinio(url).catch(() => {})));
   }
 }

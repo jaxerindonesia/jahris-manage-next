@@ -146,7 +146,7 @@ export async function POST(req: NextRequest) {
     let overtimeSuggestion = null;
     if (targetUserId === auth.user.id && hasPermission(auth.user, "overtimes", "create")) {
       const config = await prisma.attendanceConfig.findFirst({ where: { tenantId: updated.tenantId }, orderBy: { updatedAt: "desc" } });
-      const linked = await prisma.overtime.findUnique({ where: { attendanceId: updated.id }, select: { id: true } });
+      const linked = await prisma.overtime.findFirst({ where: { attendanceId: updated.id }, select: { id: true } });
       if (!linked) overtimeSuggestion = getAttendanceOvertime(updated, config?.overtimeThresholdHours ?? 2);
     }
 

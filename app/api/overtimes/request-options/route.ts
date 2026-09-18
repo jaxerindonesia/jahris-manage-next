@@ -16,7 +16,7 @@ export async function GET() {
         checkIn: { not: null },
         checkOut: { not: null },
         ...(scopedTenantId ? { tenantId: scopedTenantId } : {}),
-        overtime: null,
+        overtimes: { none: {} },
       },
       orderBy: { date: "desc" },
       take: 100,
