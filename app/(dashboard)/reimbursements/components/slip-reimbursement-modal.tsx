@@ -356,7 +356,11 @@ function SlipContent({
 
   const companyName = tenantConfig?.companyName?.trim() || "JAXER GRUP INDONESIA";
   const companyUrl  = tenantConfig?.companyUrl?.trim() || "";
-  const companyLogo = "/logo_jahris_white.png";
+  const defaultCompanyLogo = "/logo_jahris_white.png";
+  const companyLogo =
+    tenantConfig?.logoDarkUrl?.trim() ||
+    tenantConfig?.logoUrl?.trim() ||
+    defaultCompanyLogo;
 
   const statusConfig = isApproved
     ? { label: "Dokumen Disetujui", badgeClass: "badge badge-green", Icon: CheckCircle, tw: "bg-green-100 text-green-700" }
@@ -389,7 +393,15 @@ function SlipContent({
         style={{ background: "linear-gradient(90deg,#1e3a8a 0%,#1d4ed8 100%)" }}
       >
         <div className="slip-header-left flex items-center gap-3.5">
-          <img src={companyLogo} alt={`Logo ${companyName}`} className="slip-header-logo block h-11 w-[92px] shrink-0 object-contain object-center" />
+          <img
+            src={companyLogo}
+            alt={`Logo ${companyName}`}
+            className="slip-header-logo block h-11 w-[92px] shrink-0 object-contain object-center"
+            onError={(event) => {
+              if (event.currentTarget.src.endsWith(defaultCompanyLogo)) return;
+              event.currentTarget.src = defaultCompanyLogo;
+            }}
+          />
           <div className="slip-header-identity flex min-h-[42px] flex-col justify-center border-l border-white/30 pl-3.5">
             <div className="slip-header-company text-xl leading-none font-bold">{companyName}</div>
             <div className="slip-header-dept mt-1 text-sm leading-none text-blue-200">Human Resources Department</div>
