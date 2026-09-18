@@ -19,12 +19,14 @@ export async function GET(req: NextRequest) {
     }
 
     const { startUtc, endUtc } = getJakartaDayRange();
-    const jobRunTime = new Date(endUtc);
+    const jobRunTime = new Date();
+    const staleCheckInBefore = new Date(jobRunTime.getTime() - 24 * 60 * 60 * 1000);
 
     const openAttendances = await prisma.attendance.findMany({
       where: {
         checkOut: null,
         scheduledEndAt: { lte: jobRunTime },
+        OR: [{ checkIn: null }, { checkIn: { lte: staleCheckInBefore } }],
       },
       select: {
         id: true,
@@ -45,7 +47,7 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    await prisma.$transaction(
+    const results = await prisma.$transaction(
       openAttendances.map((attendance) =>
         {
           const officeEnd = attendance.scheduledEndAt ?? jobRunTime;
@@ -66,8 +68,8 @@ export async function GET(req: NextRequest) {
             status = "Half Day";
           }
 
-          return prisma.attendance.update({
-            where: { id: attendance.id },
+          return prisma.attendance.updateMany({
+            where: { id: attendance.id, checkOut: null },
             data: {
               checkOut: effectiveCheckoutTime,
               autoCheckout: true,
@@ -93,7 +95,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       message: "Attendance auto checkout job completed",
-      updated: openAttendances.length,
+      updated: results.reduce((total, result) => total + result.count, 0),
       targetDateStart: startUtc.toISOString(),
       targetDateEnd: endUtc.toISOString(),
     });

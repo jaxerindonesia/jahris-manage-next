@@ -107,6 +107,7 @@ export default function Page() {
   const [faceModalMode, setFaceModalMode] = useState<"check-in" | "check-out" | "break-in" | "break-out">("check-in");
 
   const isAdmin = ["Super Admin", "Admin"].includes(userData.role);
+
   const totalPages = useMemo(
     () => Math.max(1, Math.ceil(total / ITEMS_PER_PAGE)),
     [total],
@@ -347,6 +348,7 @@ export default function Page() {
       const attendanceDay = getJakartaDayKey(new Date()).toISOString();
       const params = new URLSearchParams();
       params.set("attendanceDay", attendanceDay);
+      params.set("includeOpen", "true");
       params.set("limit", "1");
 
       const res = await fetch(`/api/attendances/user/${userId}?${params.toString()}`);

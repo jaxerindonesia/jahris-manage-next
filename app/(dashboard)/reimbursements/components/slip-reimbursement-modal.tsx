@@ -85,10 +85,11 @@ function SlipReimbursementContent({ detailItem, onClose, loading = false }: Slip
       justify-content: space-between;
       color: #fff;
     }
-    .slip-header-left { display: flex; align-items: center; gap: 12px; }
-    .slip-header-logo { max-height: 40px; max-width: 80px; object-fit: contain; }
-    .slip-header-company { font-size: 14pt; font-weight: 700; }
-    .slip-header-dept { font-size: 8pt; color: #bfdbfe; }
+    .slip-header-left { display: flex; align-items: center; gap: 14px; }
+    .slip-header-logo { display: block; width: 92px; height: 44px; object-fit: contain; object-position: center; flex-shrink: 0; }
+    .slip-header-identity { display: flex; min-height: 42px; flex-direction: column; justify-content: center; border-left: 1px solid rgba(255,255,255,.3); padding-left: 14px; }
+    .slip-header-company { font-size: 14pt; font-weight: 700; line-height: 1.1; }
+    .slip-header-dept { margin-top: 4px; font-size: 8pt; line-height: 1.1; color: #bfdbfe; }
     .slip-header-right { text-align: right; }
     .slip-header-label { font-size: 7pt; text-transform: uppercase; letter-spacing: 0.1em; color: #bfdbfe; }
     .slip-header-date { font-size: 12pt; font-weight: 700; }
@@ -355,9 +356,7 @@ function SlipContent({
 
   const companyName = tenantConfig?.companyName?.trim() || "JAXER GRUP INDONESIA";
   const companyUrl  = tenantConfig?.companyUrl?.trim() || "";
-  const companyLogo =
-    tenantConfig?.logoDarkUrl || tenantConfig?.logoUrl ||
-    tenantConfig?.tenantLogoDarkUrl || tenantConfig?.tenantLogoUrl || "/logo22.png";
+  const companyLogo = "/logo_jahris_white.png";
 
   const statusConfig = isApproved
     ? { label: "Dokumen Disetujui", badgeClass: "badge badge-green", Icon: CheckCircle, tw: "bg-green-100 text-green-700" }
@@ -386,14 +385,14 @@ function SlipContent({
     >
       {/* ── SLIP-HEADER ── */}
       <div
-        className="slip-header px-8 py-6 text-white"
+        className="slip-header flex items-center justify-between gap-6 px-8 py-5 text-white"
         style={{ background: "linear-gradient(90deg,#1e3a8a 0%,#1d4ed8 100%)" }}
       >
-        <div className="slip-header-left flex items-center gap-3">
-          <img src={companyLogo} alt={`Logo ${companyName}`} className="slip-header-logo max-h-12 max-w-24 object-contain" />
-          <div>
-            <div className="slip-header-company text-xl font-bold">{companyName}</div>
-            <div className="slip-header-dept text-sm text-blue-200">Human Resources Department</div>
+        <div className="slip-header-left flex items-center gap-3.5">
+          <img src={companyLogo} alt={`Logo ${companyName}`} className="slip-header-logo block h-11 w-[92px] shrink-0 object-contain object-center" />
+          <div className="slip-header-identity flex min-h-[42px] flex-col justify-center border-l border-white/30 pl-3.5">
+            <div className="slip-header-company text-xl leading-none font-bold">{companyName}</div>
+            <div className="slip-header-dept mt-1 text-sm leading-none text-blue-200">Human Resources Department</div>
           </div>
         </div>
         <div className="slip-header-right text-right">

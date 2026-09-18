@@ -127,11 +127,17 @@ export async function DELETE(_: Request, { params }: Params) {
       (url): url is string => typeof url === "string" && url.includes(BUCKET_AVATARS),
     );
 
-    await Promise.all(evidenceUrls.map((url) => deleteFromMinio(url)));
-
     await prisma.attendance.delete({
       where: { id: p.id },
     });
+
+    await Promise.all(evidenceUrls.map(async (url) => {
+      const linked = await prisma.overtime.findFirst({
+        where: { OR: [{ checkInFaceImage: url }, { checkOutFaceImage: url }, { proofUrl: url }] },
+        select: { id: true },
+      });
+      if (!linked) await deleteFromMinio(url);
+    }));
 
     return NextResponse.json({
       message: "Attendance successfully deleted",

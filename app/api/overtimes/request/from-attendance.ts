@@ -8,6 +8,8 @@ import { buildTenantStorageObjectName } from "@/lib/helper/storage";
 import { validateAttachmentBuffer } from "@/lib/security/file-validation";
 import { BUCKET_AVATARS, uploadBufferToMinio, deleteFromMinio } from "@/lib/minio";
 import { randomUUID } from "node:crypto";
+import { splitOvertimePeriods } from "@/lib/helper/overtime-periods";
+import { getJakartaDayRange } from "@/lib/helper/date";
 
 export async function requestOvertimeFromAttendance(req: Request, user: SessionUser) {
   const form = await req.formData();
@@ -41,32 +43,37 @@ export async function requestOvertimeFromAttendance(req: Request, user: SessionU
   try {
     const result = await prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`attendance-overtime:${attendance.id}`}))`;
-      const linked = await tx.overtime.findUnique({ where: { attendanceId } });
+      const linked = await tx.overtime.findFirst({ where: { attendanceId }, orderBy: { startTime: "asc" } });
       if (linked) return { data: linked, created: false };
       const current = await tx.attendance.findFirst({ where: { id: attendanceId, userId: user.id, tenantId: user.tenantId } });
       const verified = current && getAttendanceOvertime(current, config?.overtimeThresholdHours ?? 2);
       if (!current || !verified) throw new Error("Kehadiran berubah. Muat ulang halaman dan coba lagi.");
-      const overtimeDate = new Date(`${current.attendanceDay.toISOString().slice(0, 10)}T00:00:00`);
+      const periods = splitOvertimePeriods(new Date(verified.startTime), new Date(verified.endTime));
       const duplicate = await tx.overtime.findFirst({ where: {
         userId: user.id, tenantId: current.tenantId, status: { not: "REJECTED" },
         OR: [
-          { overtimeDate: { in: [overtimeDate, current.attendanceDay] } },
+          ...periods.map((period) => {
+            const { startUtc, endUtc } = getJakartaDayRange(period.startTime);
+            return { overtimeDate: { gte: startUtc, lte: endUtc } };
+          }),
           { startTime: { lt: new Date(verified.endTime) }, endTime: { gt: new Date(verified.startTime) } },
         ],
       } });
       if (duplicate) throw new Error("Sudah ada pengajuan lembur pada tanggal ini. Lanjutkan pengajuan tersebut melalui menu Lembur.");
-      const data = await tx.overtime.create({ data: {
-        tenantId: current.tenantId, userId: user.id, attendanceId,
-        overtimeDate,
-        startTime: new Date(verified.startTime), endTime: new Date(verified.endTime),
-        overtimeMinutes: verified.overtimeMinutes, requestedMinutes: verified.overtimeMinutes,
-        description, proofUrl, status: "PENDING",
-        checkOutFaceImage: current.checkOutFaceImage,
-        checkOutLocation: current.checkOutLocation as Prisma.InputJsonValue,
-        payMethod: "PER_HOUR", hourlyRate: 0, dailyRate: 0, payoutAmount: 0,
-        approvalDecisions: { createMany: { data: approverIds.map((approverUserId) => ({ approverUserId, status: "PENDING" })) } },
-      } });
-      return { data, created: true };
+      const records = [];
+      for (const period of periods) {
+        const data = await tx.overtime.create({ data: {
+          tenantId: current.tenantId, userId: user.id, attendanceId,
+          ...period,
+          description, proofUrl, status: "PENDING",
+          checkOutFaceImage: current.checkOutFaceImage,
+          checkOutLocation: current.checkOutLocation as Prisma.InputJsonValue,
+          payMethod: "PER_HOUR", hourlyRate: 0, dailyRate: 0, payoutAmount: 0,
+          approvalDecisions: { createMany: { data: approverIds.map((approverUserId) => ({ approverUserId, status: "PENDING" })) } },
+        } });
+        records.push(data);
+      }
+      return { data: records[0], created: true };
     });
     if (!result.created) await deleteFromMinio(proofUrl).catch(() => {});
     return NextResponse.json({ message: result.created ? "Pengajuan lembur berhasil dibuat dan menunggu persetujuan" : "Pengajuan lembur sudah tercatat", data: result.data }, { status: result.created ? 201 : 200 });
