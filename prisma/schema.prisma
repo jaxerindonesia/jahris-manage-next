@@ -286,7 +286,7 @@ model Attendance {
   scheduleSource         String?    @map("schedule_source")
   checkInDistanceMeters  Float?     @map("check_in_distance_meters")
   checkOutDistanceMeters Float?     @map("check_out_distance_meters")
-  overtime               Overtime?
+  overtimes              Overtime[]
   tenant                 Tenant?    @relation(fields: [tenantId], references: [id])
   branch                 Branch?    @relation(fields: [branchId], references: [id], onDelete: SetNull)
   workShift              WorkShift? @relation(fields: [workShiftId], references: [id], onDelete: SetNull)
@@ -439,7 +439,7 @@ model Overtime {
   attendance        Attendance?                @relation(fields: [attendanceId], references: [id], onDelete: SetNull)
   tenant            Tenant?                    @relation(fields: [tenantId], references: [id])
 
-  @@unique([attendanceId])
+  @@unique([attendanceId, overtimeDate])
   @@index([tenantId])
   @@index([userId, overtimeDate])
   @@map("overtimes")

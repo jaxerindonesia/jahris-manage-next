@@ -31,6 +31,7 @@ export async function GET(req: NextRequest, { params }: Params) {
     const startDate = searchParams.get("startDate") || "";
     const endDate = searchParams.get("endDate") || "";
     const attendanceDay = searchParams.get("attendanceDay") || "";
+    const includeOpen = searchParams.get("includeOpen") === "true";
 
     const where: Prisma.AttendanceWhereInput = {
       userId: p.id,
@@ -42,7 +43,14 @@ export async function GET(req: NextRequest, { params }: Params) {
     }
 
     if (attendanceDay) {
-      where.attendanceDay = new Date(attendanceDay);
+      if (includeOpen) {
+        where.OR = [
+          { attendanceDay: new Date(attendanceDay) },
+          { checkIn: { not: null }, checkOut: null },
+        ];
+      } else {
+        where.attendanceDay = new Date(attendanceDay);
+      }
     }
 
     if (startDate || endDate) {
@@ -54,7 +62,9 @@ export async function GET(req: NextRequest, { params }: Params) {
     const [attendances, total] = await Promise.all([
       prisma.attendance.findMany({
         where,
-        orderBy: { createdAt: "desc" },
+        orderBy: includeOpen
+          ? [{ checkOut: { sort: "asc", nulls: "first" } }, { createdAt: "desc" }]
+          : { createdAt: "desc" },
         skip: (page - 1) * limit,
         take: limit,
       }),

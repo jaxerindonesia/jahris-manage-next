@@ -5,6 +5,7 @@ import type { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { ensureTenantScope, requireSessionUser } from "@/lib/auth/tenant";
 import { requirePermission } from "@/lib/auth/permission";
+import { getJakartaDayRange } from "@/lib/helper/date";
 
 export async function GET(req: NextRequest) {
   try {
@@ -32,12 +33,19 @@ export async function GET(req: NextRequest) {
     }
     if (status) where.status = status;
     if (overtimeDate) {
-      const dateValue = new Date(`${overtimeDate}T00:00:00`);
+      const dateValue = new Date(`${overtimeDate}T00:00:00+07:00`);
       if (!Number.isNaN(dateValue.getTime())) {
-        where.overtimeDate = dateValue;
+        const { startUtc, endUtc } = getJakartaDayRange(dateValue);
+        const dateFilter = { gte: startUtc, lte: endUtc };
+        if (activeOnly) {
+          where.AND = [{ OR: [{ overtimeDate: dateFilter }, { status: "CHECKED_IN" }] }];
+        } else {
+          where.overtimeDate = dateFilter;
+        }
       }
     }
     if (activeOnly) {
+      where.userId = auth.user.id;
       where.status = { in: ["DRAFT", "CHECKED_IN", "PENDING"] };
     }
     if (search) {
@@ -63,7 +71,7 @@ export async function GET(req: NextRequest) {
         where,
         skip: (page - 1) * limit,
         take: limit,
-        orderBy: { createdAt: "desc" },
+        orderBy: activeOnly ? [{ status: "asc" }, { createdAt: "desc" }] : { createdAt: "desc" },
         include: {
           user: { select: { id: true, name: true } },
           attendance: { select: { id: true, date: true, checkIn: true, checkOut: true } },
