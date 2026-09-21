@@ -54,19 +54,13 @@ export async function GET(req: NextRequest) {
           const effectiveCheckoutTime = attendance.checkIn
             ? new Date(Math.max(new Date(attendance.checkIn).getTime(), officeEnd.getTime()))
             : officeEnd;
-          const isHalfDay = effectiveCheckoutTime < officeEnd;
           const wasLate = attendance.status === "Late";
 
-          let status = "Present";
-          if (!attendance.checkIn) {
-            status = "Absent";
-          } else if (wasLate && isHalfDay) {
-            status = "Late - Half Day";
-          } else if (wasLate && !isHalfDay) {
-            status = "Late - Present";
-          } else if (!wasLate && isHalfDay) {
-            status = "Half Day";
-          }
+          const status = !attendance.checkIn
+            ? "Absent"
+            : wasLate
+              ? "Late - Present"
+              : "Present";
 
           return prisma.attendance.updateMany({
             where: { id: attendance.id, checkOut: null },

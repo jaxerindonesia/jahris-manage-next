@@ -85,13 +85,15 @@ export default function FaceRecognitionModal({
   const getCaptureDataUrl = useCallback(() => {
     if (!videoRef.current) return "";
     const video = videoRef.current;
+    const maxWidth = 480;
+    const scale = Math.min(1, maxWidth / video.videoWidth);
     const snapshotCanvas = document.createElement("canvas");
-    snapshotCanvas.width = video.videoWidth;
-    snapshotCanvas.height = video.videoHeight;
+    snapshotCanvas.width = Math.round(video.videoWidth * scale);
+    snapshotCanvas.height = Math.round(video.videoHeight * scale);
     const ctx = snapshotCanvas.getContext("2d");
     if (!ctx) return "";
     ctx.drawImage(video, 0, 0, snapshotCanvas.width, snapshotCanvas.height);
-    return snapshotCanvas.toDataURL("image/jpeg", 0.9);
+    return snapshotCanvas.toDataURL("image/jpeg", 0.75);
   }, []);
 
   const cleanup = useCallback(() => {
