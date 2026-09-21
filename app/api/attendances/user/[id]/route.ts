@@ -32,6 +32,7 @@ export async function GET(req: NextRequest, { params }: Params) {
     const endDate = searchParams.get("endDate") || "";
     const attendanceDay = searchParams.get("attendanceDay") || "";
     const includeOpen = searchParams.get("includeOpen") === "true";
+    const openShiftGraceStart = new Date(Date.now() - 12 * 60 * 60 * 1000);
 
     const where: Prisma.AttendanceWhereInput = {
       userId: p.id,
@@ -46,7 +47,11 @@ export async function GET(req: NextRequest, { params }: Params) {
       if (includeOpen) {
         where.OR = [
           { attendanceDay: new Date(attendanceDay) },
-          { checkIn: { not: null }, checkOut: null },
+          {
+            checkIn: { not: null },
+            checkOut: null,
+            scheduledEndAt: { gte: openShiftGraceStart },
+          },
         ];
       } else {
         where.attendanceDay = new Date(attendanceDay);
@@ -63,7 +68,11 @@ export async function GET(req: NextRequest, { params }: Params) {
       prisma.attendance.findMany({
         where,
         orderBy: includeOpen
-          ? [{ checkOut: { sort: "asc", nulls: "first" } }, { createdAt: "desc" }]
+          ? [
+              { attendanceDay: "desc" },
+              { checkOut: { sort: "asc", nulls: "first" } },
+              { createdAt: "desc" },
+            ]
           : { createdAt: "desc" },
         skip: (page - 1) * limit,
         take: limit,
