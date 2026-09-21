@@ -24,10 +24,10 @@ export default function ExpenseRow({ detail, index, disabled, canRemove, onChang
     event.target.value = "";
     if (!files.length) return;
     for (const file of files) {
-    if (!file.size || file.size > 5 * 1024 * 1024) return toast.error("Ukuran bukti maksimal 5 MB dan tidak boleh kosong");
-    if (!["image/jpeg", "image/png", "image/webp", "application/pdf"].includes(file.type)) {
-      return toast.error("Bukti harus berupa JPG, PNG, WebP, atau PDF");
-    }
+      if (!file.size || file.size > 5 * 1024 * 1024) return toast.error("Ukuran bukti maksimal 5 MB dan tidak boleh kosong");
+      if (!["image/jpeg", "image/png", "image/webp", "application/pdf"].includes(file.type)) {
+        return toast.error("Bukti harus berupa JPG, PNG, WebP, atau PDF");
+      }
     }
     onChange({ files: [...detail.files, ...files] });
   };
@@ -70,11 +70,33 @@ export default function ExpenseRow({ detail, index, disabled, canRemove, onChang
       </div>
       <div className="mt-4 grid gap-2">
         <Label htmlFor={`${prefix}-receipt`}>Bukti Pengeluaran</Label>
-        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed bg-muted/20 p-3">
-          <Upload className="h-5 w-5 shrink-0 text-muted-foreground" />
-          <Input id={`${prefix}-receipt`} type="file" multiple accept="image/jpeg,image/png,image/webp,application/pdf"
-            onChange={handleFile} className="min-w-0 flex-1 basis-48" />
-        </div>
+        <Input
+          id={`${prefix}-receipt`}
+          type="file"
+          multiple
+          disabled={disabled}
+          accept="image/jpeg,image/png,image/webp,application/pdf"
+          onChange={handleFile}
+          className="sr-only"
+        />
+        <Label
+          htmlFor={`${prefix}-receipt`}
+          className={`flex min-h-16 w-full items-center gap-3 rounded-lg border border-dashed bg-muted/20 p-3 transition-colors ${
+            disabled
+              ? "cursor-not-allowed opacity-50"
+              : "cursor-pointer hover:border-primary hover:bg-primary/5"
+          }`}
+        >
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-background shadow-sm">
+            <Upload className="h-5 w-5 text-primary" />
+          </span>
+          <span className="min-w-0">
+            <span className="block text-sm font-medium">Pilih file bukti pengeluaran</span>
+            <span className="mt-1 block text-xs font-normal text-muted-foreground">
+              Tekan area ini untuk memilih satu atau beberapa file
+            </span>
+          </span>
+        </Label>
         <div className="grid gap-2 sm:grid-cols-2">
           {detail.receiptUrls.map((url, fileIndex) => (
             <div key={url} className="flex min-w-0 items-center gap-2 rounded-lg border p-2">
