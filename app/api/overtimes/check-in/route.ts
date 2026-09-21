@@ -103,7 +103,9 @@ export async function POST(req: Request) {
       where: {
         userId: overtime.userId,
         ...(overtime.tenantId ? { tenantId: overtime.tenantId } : { tenantId: null }),
+        attendanceId: null,
         status: "CHECKED_IN",
+        startTime: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
         NOT: { id: overtime.id },
       },
       select: { id: true },

@@ -54,7 +54,7 @@ const LAST_GEO_STORAGE_KEY = "hr_last_geo_point";
 const LOCATION_OPTIONS: PositionOptions = {
   enableHighAccuracy: true,
   timeout: 10000,
-  maximumAge: 0,
+  maximumAge: 30000,
 };
 
 type SavedGeoPoint = {
@@ -571,16 +571,17 @@ export default function Page() {
         } satisfies SavedGeoPoint),
       );
 
+      const result = await res.json();
+      setTodayAttendance(result.data || null);
       toast.success("Berhasil Check In");
       fetchAttendance(userData);
-      fetchTodayAttendance(userData.id);
     } catch (error) {
       const message = error instanceof Error ? error.message : "";
       toast.error(
         message || "Gagal mengambil lokasi. Nyalakan lokasi/GPS lalu izinkan akses lokasi terlebih dahulu.",
       );
     }
-  }, [userData, fetchAttendance, fetchTodayAttendance]);
+  }, [userData, fetchAttendance]);
 
   const doCheckOut = useCallback(async (faceCaptureBase64: string) => {
     try {
@@ -660,18 +661,18 @@ export default function Page() {
         } satisfies SavedGeoPoint),
       );
 
-      toast.success("Berhasil Check Out");
       const result = await res.json();
+      setTodayAttendance(result.data || null);
+      toast.success("Berhasil Check Out");
       if (result.overtimeSuggestion) setOvertimeSuggestion(result.overtimeSuggestion);
       fetchAttendance(userData);
-      fetchTodayAttendance(userData.id);
     } catch (error) {
       const message = error instanceof Error ? error.message : "";
       toast.error(
         message || "Gagal mengambil lokasi. Nyalakan lokasi/GPS lalu izinkan akses lokasi terlebih dahulu.",
       );
     }
-  }, [userData, fetchAttendance, fetchTodayAttendance]);
+  }, [userData, fetchAttendance]);
 
   const getBreakLocation = useCallback(async () => {
     if (!navigator.geolocation) {

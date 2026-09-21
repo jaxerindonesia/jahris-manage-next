@@ -85,7 +85,7 @@ export default function MobileNavbar() {
       permissions: ["get-all", "get-by-id"],
     },
     {
-      id: "employees",
+      id: "users",
       name: "Data Karyawan",
       icon: Users,
       path: "/employees",

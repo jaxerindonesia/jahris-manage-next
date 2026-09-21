@@ -21,6 +21,7 @@ export async function GET(req: NextRequest) {
     const status = searchParams.get("status") || "";
     const overtimeDate = (searchParams.get("overtimeDate") || "").trim();
     const activeOnly = searchParams.get("activeOnly") === "true";
+    const activeCheckInSince = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
     const where: Prisma.OvertimeWhereInput = {};
     if (scopedTenantId) where.tenantId = scopedTenantId;
@@ -38,7 +39,26 @@ export async function GET(req: NextRequest) {
         const { startUtc, endUtc } = getJakartaDayRange(dateValue);
         const dateFilter = { gte: startUtc, lte: endUtc };
         if (activeOnly) {
-          where.AND = [{ OR: [{ overtimeDate: dateFilter }, { status: "CHECKED_IN" }] }];
+          where.AND = [
+            {
+              OR: [
+                {
+                  attendanceId: null,
+                  overtimeDate: dateFilter,
+                  status: "DRAFT",
+                },
+                {
+                  attendanceId: null,
+                  status: "CHECKED_IN",
+                  startTime: { gte: activeCheckInSince },
+                },
+                {
+                  overtimeDate: dateFilter,
+                  status: "PENDING",
+                },
+              ],
+            },
+          ];
         } else {
           where.overtimeDate = dateFilter;
         }
@@ -46,7 +66,15 @@ export async function GET(req: NextRequest) {
     }
     if (activeOnly) {
       where.userId = auth.user.id;
-      where.status = { in: ["DRAFT", "CHECKED_IN", "PENDING"] };
+      if (!where.AND) {
+        where.AND = [
+          {
+            attendanceId: null,
+            status: "CHECKED_IN",
+            startTime: { gte: activeCheckInSince },
+          },
+        ];
+      }
     }
     if (search) {
       const currentAnd = Array.isArray(where.AND)
@@ -71,7 +99,9 @@ export async function GET(req: NextRequest) {
         where,
         skip: (page - 1) * limit,
         take: limit,
-        orderBy: activeOnly ? [{ status: "asc" }, { createdAt: "desc" }] : { createdAt: "desc" },
+        orderBy: activeOnly
+          ? [{ status: "asc" }, { createdAt: "desc" }]
+          : { createdAt: "desc" },
         include: {
           user: { select: { id: true, name: true } },
           attendance: { select: { id: true, date: true, checkIn: true, checkOut: true } },

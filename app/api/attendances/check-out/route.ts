@@ -68,13 +68,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (attendance.checkOut) {
-      return NextResponse.json(
-        { message: "Already checked out today" },
-        { status: 409 },
-      );
-    }
-
     const latitude = Number(checkOutLocation?.latitude);
     const longitude = Number(checkOutLocation?.longitude);
     const hasLocation = Number.isFinite(latitude) && Number.isFinite(longitude);
