@@ -235,15 +235,15 @@ export const headerToolbar = ({ actions, overtime, filters }: HeaderToolbarProps
 
             {actions.checkRole(modelName, "create") && (
                 <>
-                    {!overtime.currentOvertime ? (
-                        <Button
-                            onClick={actions.onAdd}
-                            className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-white transition-colors hover:bg-blue-700"
-                        >
-                            <Plus className="h-4 w-4" />
-                            Tambah
-                        </Button>
-                    ) : overtime.currentOvertime.status === "DRAFT" && formatJakartaDate(overtime.currentOvertime.overtimeDate) === getTodayJakartaDate() ? (
+                    <Button
+                        onClick={actions.onAdd}
+                        className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-white transition-colors hover:bg-blue-700"
+                    >
+                        <Plus className="h-4 w-4" />
+                        Tambah Lembur
+                    </Button>
+
+                    {overtime.currentOvertime?.status === "DRAFT" && formatJakartaDate(overtime.currentOvertime.overtimeDate) === getTodayJakartaDate() ? (
                         <Button
                             onClick={actions.onCheckIn}
                             className="flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-white transition-colors hover:bg-green-700"
@@ -251,21 +251,17 @@ export const headerToolbar = ({ actions, overtime, filters }: HeaderToolbarProps
                             <LogIn className="h-4 w-4" />
                             Check In
                         </Button>
-                    ) : overtime.currentOvertime.status === "DRAFT" ? (
+                    ) : overtime.currentOvertime?.status === "DRAFT" ? (
                         <Button disabled className="cursor-not-allowed bg-gray-400 text-white">
                             Draft Lewat Tanggal
                         </Button>
-                    ) : overtime.currentOvertime.status === "CHECKED_IN" ? (
+                    ) : overtime.currentOvertime?.status === "CHECKED_IN" ? (
                         <Button
                             onClick={actions.onCheckOut}
                             className="flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-white transition-colors hover:bg-red-700"
                         >
                             <LogOut className="h-4 w-4" />
                             Check Out
-                        </Button>
-                    ) : overtime.currentOvertime.status === "PENDING" ? (
-                        <Button disabled className="cursor-not-allowed bg-gray-400 text-white">
-                            Menunggu Approval
                         </Button>
                     ) : null}
                 </>
