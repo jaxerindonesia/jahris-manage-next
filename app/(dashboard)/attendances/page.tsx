@@ -24,6 +24,7 @@ type AttendanceConfigState = {
   officeEndTime: string;
   lateToleranceMinutes: number;
   lateDeductionAmount: number;
+  absentDeductionByDay: Record<string, number>;
   overtimeThresholdHours: number;
   breakEnabled: boolean;
   breakFaceCaptureEnabled: boolean;
@@ -42,6 +43,7 @@ const DEFAULT_ATTENDANCE_CONFIG: AttendanceConfigState = {
   officeEndTime: "17:00",
   lateToleranceMinutes: 15,
   lateDeductionAmount: 0,
+  absentDeductionByDay: {},
   overtimeThresholdHours: 2,
   breakEnabled: false,
   breakFaceCaptureEnabled: false,
@@ -283,6 +285,7 @@ export default function Page() {
         officeEndTime: config.officeEndTime || "17:00",
         lateToleranceMinutes: Number(config.lateToleranceMinutes ?? 15),
         lateDeductionAmount: Number(config.lateDeductionAmount ?? 0),
+        absentDeductionByDay: config.absentDeductionByDay ?? {},
         breakEnabled: Boolean(config.breakEnabled ?? false),
         breakFaceCaptureEnabled: Boolean(config.breakFaceCaptureEnabled ?? false),
         workingDays:

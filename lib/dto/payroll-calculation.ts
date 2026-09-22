@@ -8,6 +8,8 @@ export interface PayrollSalarySummaryDto {
   lateDeductionRate: number;
   lateAttendanceDays: number;
   lateDeductionAmount: number;
+  absentAttendanceDays: number;
+  absentDeductionAmount: number;
 }
 
 export interface PayrollCalculationSummaryDto

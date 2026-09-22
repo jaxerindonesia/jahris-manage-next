@@ -8,6 +8,7 @@ import { ensureTenantScope, requireSessionUser } from "@/lib/auth/tenant";
 import { requirePermission } from "@/lib/auth/permission";
 import {
   AUTO_LATE_DEDUCTION_COMPONENT_NAME,
+  AUTO_ABSENT_DEDUCTION_COMPONENT_NAME,
   AUTO_OVERTIME_COMPONENT_NAME,
 } from "@/lib/constants/payroll";
 import {
@@ -40,6 +41,7 @@ function normalizeComponentValues(items: unknown[], basicSalary: number) {
     item.nameSnapshot &&
     item.nameSnapshot !== AUTO_OVERTIME_COMPONENT_NAME &&
     item.nameSnapshot !== AUTO_LATE_DEDUCTION_COMPONENT_NAME &&
+    item.nameSnapshot !== AUTO_ABSENT_DEDUCTION_COMPONENT_NAME &&
     ["EARNING", "DEDUCTION"].includes(item.typeSnapshot),
   );
 }
@@ -152,6 +154,16 @@ export async function PUT(req: Request, { params }: Params) {
         typeSnapshot: "DEDUCTION",
         inputTypeSnapshot: "FIXED",
         amount: salarySummary.lateDeductionAmount,
+        baseValue: null,
+      });
+    }
+    if (salarySummary.absentDeductionAmount > 0) {
+      componentValues.push({
+        componentConfigId: null,
+        nameSnapshot: AUTO_ABSENT_DEDUCTION_COMPONENT_NAME,
+        typeSnapshot: "DEDUCTION",
+        inputTypeSnapshot: "FIXED",
+        amount: salarySummary.absentDeductionAmount,
         baseValue: null,
       });
     }
