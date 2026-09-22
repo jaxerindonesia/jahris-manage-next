@@ -29,6 +29,8 @@ export type EmployeeRecapDto = {
   user: { id: string; name: string };
   month: number;
   year: number;
+  startDate?: string;
+  endDate?: string;
   attendance: {
     summary: {
       totalHadir: number;
