@@ -34,6 +34,20 @@ export async function GET(req: Request, { params }: Params) {
     const { searchParams } = new URL(req.url);
     const month = parseInt(searchParams.get("month") || String(new Date().getMonth() + 1));
     const year = parseInt(searchParams.get("year") || String(new Date().getFullYear()));
+    const requestedStart = searchParams.get("startDate");
+    const requestedEnd = searchParams.get("endDate");
+    const isRange = requestedStart !== null || requestedEnd !== null;
+    const parseDate = (value: string | null) => {
+      if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+      const date = new Date(`${value}T00:00:00.000Z`);
+      return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value ? date : null;
+    };
+    const rangeStart = isRange ? parseDate(requestedStart) : null;
+    const rangeEnd = isRange ? parseDate(requestedEnd) : null;
+    if ((isRange && (!rangeStart || !rangeEnd || rangeStart > rangeEnd)) ||
+        (!isRange && (!Number.isInteger(month) || month < 1 || month > 12 || !Number.isInteger(year)))) {
+      return NextResponse.json({ message: "Periode rekap tidak valid" }, { status: 400 });
+    }
 
     // 1. Ambil info user
     const user = await prisma.user.findFirst({
@@ -46,8 +60,11 @@ export async function GET(req: Request, { params }: Params) {
     }
 
     // 2. Ambil data kehadiran untuk bulan & tahun tersebut
-    const startDate = new Date(year, month - 1, 1);
-    const endDate = new Date(year, month, 0, 23, 59, 59, 999);
+    const startDate = rangeStart ?? new Date(year, month - 1, 1);
+    const endDate = rangeEnd
+      ? new Date(rangeEnd.getTime() + 24 * 60 * 60 * 1000 - 1)
+      : new Date(year, month, 0, 23, 59, 59, 999);
+    const recapYear = rangeEnd?.getUTCFullYear() ?? year;
 
     const [attendances, submissionTypes] = await Promise.all([
       prisma.attendance.findMany({
@@ -100,8 +117,8 @@ export async function GET(req: Request, { params }: Params) {
     });
 
     // Ambil semua pengajuan tahun ini untuk menghitung sisa kuota
-    const yearStart = new Date(year, 0, 1);
-    const yearEnd = new Date(year, 11, 31, 23, 59, 59, 999);
+    const yearStart = new Date(recapYear, 0, 1);
+    const yearEnd = new Date(recapYear, 11, 31, 23, 59, 59, 999);
 
     const yearSubmissions = await prisma.submission.findMany({
       where: {
@@ -137,7 +154,8 @@ export async function GET(req: Request, { params }: Params) {
     const submissionsHistory = await prisma.submission.findMany({
       where: {
         userId: id,
-        startDate: { gte: yearStart, lte: yearEnd },
+        startDate: isRange ? { lte: endDate } : { gte: yearStart, lte: yearEnd },
+        ...(isRange ? { endDate: { gte: startDate } } : {}),
       },
       include: { submissionType: true },
       orderBy: { createdAt: "desc" },
@@ -157,7 +175,8 @@ export async function GET(req: Request, { params }: Params) {
       data: {
         user,
         month,
-        year,
+        year: recapYear,
+        ...(isRange ? { startDate: requestedStart, endDate: requestedEnd } : {}),
         attendance: {
           summary,
           details: attendances.map((a) => ({
