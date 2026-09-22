@@ -55,6 +55,8 @@ export async function GET(req: NextRequest) {
         lateDeductionRate: salary.lateDeductionRate,
         lateAttendanceDays: salary.lateAttendanceDays,
         lateDeductionAmount: salary.lateDeductionAmount,
+        absentAttendanceDays: salary.absentAttendanceDays,
+        absentDeductionAmount: salary.absentDeductionAmount,
         overtimeAmount: overtime.totalAmount,
         overtimeMinutes: overtime.totalMinutes,
         overtimeEntries: overtime.totalEntries,

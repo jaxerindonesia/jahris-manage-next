@@ -22,6 +22,7 @@ import type { PayrollComponentConfigDto, PayrollComponentValueDto } from "@/lib/
 import type { PayrollCalculationSummaryDto } from "@/lib/dto/payroll-calculation";
 import {
   AUTO_LATE_DEDUCTION_COMPONENT_NAME,
+  AUTO_ABSENT_DEDUCTION_COMPONENT_NAME,
   AUTO_OVERTIME_COMPONENT_NAME,
 } from "@/lib/constants/payroll";
 import { Info } from "lucide-react";
@@ -52,6 +53,7 @@ export default function FormData({
   const [componentConfigs, setComponentConfigs] = useState<PayrollComponentConfigDto[]>([]);
   const [overtimeAmount, setOvertimeAmount] = useState(0);
   const [lateDeductionAmount, setLateDeductionAmount] = useState(0);
+  const [absentDeductionAmount, setAbsentDeductionAmount] = useState(0);
   const [calculationSummary, setCalculationSummary] =
     useState<PayrollCalculationSummaryDto | null>(null);
   const [formData, setFormData] = useState<PayrollDto>(createDefaultFormData);
@@ -81,6 +83,7 @@ export default function FormData({
     existingValues?: PayrollComponentValueDto[],
     overtimeTotal = 0,
     lateDeductionTotal = 0,
+    absentDeductionTotal = 0,
   ) =>
     [
       ...configs
@@ -138,6 +141,18 @@ export default function FormData({
           amount: lateDeductionTotal,
         } satisfies PayrollComponentValueDto]
         : []),
+      ...(absentDeductionTotal > 0
+        ? [{
+          id: null,
+          payrollId: null,
+          componentConfigId: null,
+          nameSnapshot: AUTO_ABSENT_DEDUCTION_COMPONENT_NAME,
+          typeSnapshot: "DEDUCTION",
+          inputTypeSnapshot: "FIXED",
+          baseValue: null,
+          amount: absentDeductionTotal,
+        } satisfies PayrollComponentValueDto]
+        : []),
     ];
 
   const rebuildComponentValues = (
@@ -145,11 +160,13 @@ export default function FormData({
     sourceValues?: PayrollComponentValueDto[],
     overtimeTotal = overtimeAmount,
     lateDeductionTotal = lateDeductionAmount,
+    absentDeductionTotal = absentDeductionAmount,
   ) => {
     const manualValues = (sourceValues ?? formData.componentValues ?? []).filter(
       (item) =>
         item.nameSnapshot !== AUTO_OVERTIME_COMPONENT_NAME &&
-        item.nameSnapshot !== AUTO_LATE_DEDUCTION_COMPONENT_NAME,
+        item.nameSnapshot !== AUTO_LATE_DEDUCTION_COMPONENT_NAME &&
+        item.nameSnapshot !== AUTO_ABSENT_DEDUCTION_COMPONENT_NAME,
     );
     return buildComponentValues(
       componentConfigs,
@@ -157,6 +174,7 @@ export default function FormData({
       manualValues,
       overtimeTotal,
       lateDeductionTotal,
+      absentDeductionTotal,
     );
   };
 
@@ -173,6 +191,7 @@ export default function FormData({
     if (!userId || !month || !year) {
       setOvertimeAmount(0);
       setLateDeductionAmount(0);
+      setAbsentDeductionAmount(0);
       setCalculationSummary(null);
       setFormData((current) => ({
         ...current,
@@ -206,9 +225,11 @@ export default function FormData({
       const basicSalary = Number(summary.basicSalary || 0);
       const totalAmount = Number(summary.overtimeAmount || 0);
       const lateDeductionTotal = Number(summary.lateDeductionAmount || 0);
+      const absentDeductionTotal = Number(summary.absentDeductionAmount || 0);
       setCalculationSummary(summary);
       setOvertimeAmount(totalAmount);
       setLateDeductionAmount(lateDeductionTotal);
+      setAbsentDeductionAmount(absentDeductionTotal);
       setFormData((current) => ({
         ...current,
         userId,
@@ -220,11 +241,13 @@ export default function FormData({
           sourceValues ?? current.componentValues,
           totalAmount,
           lateDeductionTotal,
+          absentDeductionTotal,
         ),
       }));
     } catch (error) {
       setOvertimeAmount(0);
       setLateDeductionAmount(0);
+      setAbsentDeductionAmount(0);
       setCalculationSummary(null);
       toast.error(
         error instanceof Error ? error.message : "Gagal menghitung payroll",
@@ -302,7 +325,8 @@ export default function FormData({
       const sourceValues = (initialData.componentValues || []).filter(
         (item) =>
           item.nameSnapshot !== AUTO_OVERTIME_COMPONENT_NAME &&
-          item.nameSnapshot !== AUTO_LATE_DEDUCTION_COMPONENT_NAME,
+          item.nameSnapshot !== AUTO_LATE_DEDUCTION_COMPONENT_NAME &&
+          item.nameSnapshot !== AUTO_ABSENT_DEDUCTION_COMPONENT_NAME,
       );
       setFormData({
         ...createDefaultFormData(),
@@ -322,6 +346,7 @@ export default function FormData({
     const defaultData = createDefaultFormData();
     setOvertimeAmount(0);
     setLateDeductionAmount(0);
+    setAbsentDeductionAmount(0);
     setCalculationSummary(null);
     setFormData({
       ...defaultData,
@@ -554,10 +579,16 @@ export default function FormData({
                     </span>
                   </p>
                 )}
+                {calculationSummary.absentAttendanceDays > 0 && (
+                  <p className="mt-1 text-red-600 dark:text-red-400">
+                    Potongan tidak hadir: {calculationSummary.absentAttendanceDays} hari ={" "}
+                    <span className="font-semibold">{formatCurrency(calculationSummary.absentDeductionAmount)}</span>
+                  </p>
+                )}
               </div>
             )}
 
-            {componentConfigs.length > 0 && (
+            {(componentConfigs.length > 0 || (formData.componentValues?.length ?? 0) > 0) && (
               <div className="space-y-4 rounded-xl border border-slate-200 p-4 dark:border-slate-800 dark:bg-slate-900/40">
                 <div>
                   <h3 className="font-semibold text-slate-900 dark:text-slate-100">Komponen Payroll</h3>
@@ -595,6 +626,8 @@ export default function FormData({
                               ? "Otomatis dari lembur yang disetujui pada periode ini."
                               : item.nameSnapshot === AUTO_LATE_DEDUCTION_COMPONENT_NAME
                                 ? "Otomatis dari jumlah keterlambatan pada periode ini."
+                                : item.nameSnapshot === AUTO_ABSENT_DEDUCTION_COMPONENT_NAME
+                                ? "Otomatis dari absensi tidak hadir sesuai tarif hari tenant."
                                 : null;
 
                           return (
@@ -625,7 +658,8 @@ export default function FormData({
                                   value={displayValue}
                                   disabled={
                                     item.nameSnapshot === AUTO_OVERTIME_COMPONENT_NAME ||
-                                    item.nameSnapshot === AUTO_LATE_DEDUCTION_COMPONENT_NAME
+                                    item.nameSnapshot === AUTO_LATE_DEDUCTION_COMPONENT_NAME ||
+                                    item.nameSnapshot === AUTO_ABSENT_DEDUCTION_COMPONENT_NAME
                                   }
                                   onChange={(e) => {
                                     const nextValues = [...(formData.componentValues || [])];

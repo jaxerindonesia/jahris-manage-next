@@ -1,6 +1,7 @@
 import prisma from "@/lib/prisma";
 import {
   isLateAttendanceStatus,
+  isAbsentAttendanceStatus,
   isWorkedAttendanceStatus,
 } from "@/lib/helper/attendance-status";
 import type { PayrollSalarySummaryDto } from "@/lib/dto/payroll-calculation";
@@ -52,7 +53,7 @@ export async function getPayrollSalarySummary(params: {
         ...(paramEnd ? { lte: rangeEnd } : { lt: rangeEnd }),
       },
     },
-    select: { status: true },
+    select: { status: true, attendanceDay: true },
   });
   const paidAttendanceDays = attendances.filter((attendance) =>
     isWorkedAttendanceStatus(attendance.status),
@@ -66,6 +67,17 @@ export async function getPayrollSalarySummary(params: {
     select: { lateDeductionAmount: true },
   });
   const lateDeductionRate = Number(attendanceConfig?.lateDeductionAmount || 0);
+  const absentRates = user.tenantId
+    ? await prisma.$queryRaw<Array<{ day_of_week: string; amount: number }>>`
+        SELECT day_of_week, amount FROM attendance_absent_deductions
+        WHERE tenant_id = ${user.tenantId}::uuid
+      `
+    : [];
+  const rateByDay = new Map(absentRates.map((rate) => [rate.day_of_week, rate.amount]));
+  const dayCodes = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
+  const absentAttendances = attendances.filter((attendance) => isAbsentAttendanceStatus(attendance.status));
+  const absentDeductionAmount = absentAttendances.reduce((total, attendance) =>
+    total + (rateByDay.get(dayCodes[attendance.attendanceDay.getUTCDay()]) ?? 0), 0);
 
   return {
     salaryType,
@@ -77,5 +89,7 @@ export async function getPayrollSalarySummary(params: {
     lateDeductionRate,
     lateAttendanceDays,
     lateDeductionAmount: lateDeductionRate * lateAttendanceDays,
+    absentAttendanceDays: absentAttendances.length,
+    absentDeductionAmount,
   };
 }

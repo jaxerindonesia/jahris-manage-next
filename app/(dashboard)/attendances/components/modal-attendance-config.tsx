@@ -13,17 +13,25 @@ interface AttendanceConfig {
   officeEndTime: string;
   lateToleranceMinutes: number;
   lateDeductionAmount: number;
+  absentDeductionByDay: Record<string, number>;
   overtimeThresholdHours: number;
   breakEnabled: boolean;
   breakFaceCaptureEnabled: boolean;
   workingDays: string[];
 }
 
+const DAY_LABELS = [
+  ["MONDAY", "Senin"], ["TUESDAY", "Selasa"], ["WEDNESDAY", "Rabu"],
+  ["THURSDAY", "Kamis"], ["FRIDAY", "Jumat"], ["SATURDAY", "Sabtu"], ["SUNDAY", "Minggu"],
+] as const;
+const EMPTY_ABSENT_DEDUCTIONS = Object.fromEntries(DAY_LABELS.map(([day]) => [day, 0]));
+
 const defaultConfig: AttendanceConfig = {
   officeStartTime: "09:00",
   officeEndTime: "17:00",
   lateToleranceMinutes: 15,
   lateDeductionAmount: 0,
+  absentDeductionByDay: EMPTY_ABSENT_DEDUCTIONS,
   overtimeThresholdHours: 2,
   breakEnabled: false,
   breakFaceCaptureEnabled: false,
@@ -64,6 +72,7 @@ export default function ModalAttendanceConfig({
         lateDeductionAmount: Number(
           data.lateDeductionAmount ?? defaultConfig.lateDeductionAmount,
         ),
+        absentDeductionByDay: { ...EMPTY_ABSENT_DEDUCTIONS, ...data.absentDeductionByDay },
         breakEnabled: Boolean(data.breakEnabled ?? defaultConfig.breakEnabled),
         breakFaceCaptureEnabled: Boolean(
           data.breakFaceCaptureEnabled ?? defaultConfig.breakFaceCaptureEnabled,
@@ -84,7 +93,7 @@ export default function ModalAttendanceConfig({
 
   useEffect(() => {
     if (initialConfig) {
-      setForm(initialConfig);
+      setForm({ ...initialConfig, absentDeductionByDay: { ...EMPTY_ABSENT_DEDUCTIONS, ...initialConfig.absentDeductionByDay } });
       return;
     }
 
@@ -102,6 +111,10 @@ export default function ModalAttendanceConfig({
     }
     if (form.lateDeductionAmount < 0) {
       toast.error("Potongan keterlambatan tidak boleh negatif");
+      return;
+    }
+    if (DAY_LABELS.some(([day]) => !Number.isSafeInteger(form.absentDeductionByDay[day]) || form.absentDeductionByDay[day] < 0)) {
+      toast.error("Potongan tidak hadir harus berupa angka bulat dan tidak boleh negatif");
       return;
     }
 
@@ -133,7 +146,7 @@ export default function ModalAttendanceConfig({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Konfigurasi Kehadiran</DialogTitle>
         </DialogHeader>
@@ -183,6 +196,28 @@ export default function ModalAttendanceConfig({
             <p className="text-xs text-muted-foreground">
               Dipotong satu kali untuk setiap hari berstatus terlambat pada payroll.
             </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Potongan Tidak Hadir per Hari</Label>
+            <p className="text-xs text-muted-foreground">Nominal tiap hari berlaku untuk tenant ini dan dihitung dari absensi berstatus tidak hadir saat payroll dibuat.</p>
+            <div className="space-y-2">
+              {DAY_LABELS.map(([day, label]) => (
+                <div key={day} className="flex items-center gap-3 rounded-lg border p-2">
+                  <Label htmlFor={`absent-${day}`} className="w-20 shrink-0">{label}</Label>
+                  <Input
+                    id={`absent-${day}`}
+                    inputMode="numeric"
+                    value={form.absentDeductionByDay[day] ? form.absentDeductionByDay[day].toLocaleString("id-ID") : ""}
+                    placeholder="0"
+                    onChange={(event) => {
+                      const amount = Number(event.target.value.replace(/\D/g, "")) || 0;
+                      setForm((current) => ({ ...current, absentDeductionByDay: { ...current.absentDeductionByDay, [day]: amount } }));
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
           </div>
 
           <div className="flex items-center justify-between rounded-lg border p-3">
