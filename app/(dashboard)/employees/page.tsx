@@ -260,7 +260,7 @@ export default function EmployeesPage() {
     }
   }, [debouncedSearchTerm, filterBranch, filterDepartment, filterStatus, filterCompany, isSuperAdmin, isAdmin]);
 
-  const onBulkDownload = useCallback(async (month: number, year: number) => {
+  const onBulkDownload = useCallback(async (period: { month: number; year: number } | { startDate: string; endDate: string }) => {
     try {
       setIsBulkDownloading(true);
 
@@ -292,9 +292,15 @@ export default function EmployeesPage() {
       const recapResults = await Promise.all(
         allData.map(async (employee) => {
           if (!employee.id) return null;
-          const recapRes = await fetch(
-            `/api/users/${employee.id}/recap?month=${month}&year=${year}`,
-          );
+          const recapParams = new URLSearchParams();
+          if ("startDate" in period) {
+            recapParams.set("startDate", period.startDate);
+            recapParams.set("endDate", period.endDate);
+          } else {
+            recapParams.set("month", String(period.month));
+            recapParams.set("year", String(period.year));
+          }
+          const recapRes = await fetch(`/api/users/${employee.id}/recap?${recapParams.toString()}`);
           if (!recapRes.ok) return null;
           const recapJson = await recapRes.json();
           return {
@@ -348,7 +354,9 @@ export default function EmployeesPage() {
       await waitForEmployeeRecapImages(printDiv);
 
       const oldTitle = document.title;
-      document.title = `rekap-karyawan-${year}-${String(month).padStart(2, "0")}`;
+      document.title = "startDate" in period
+        ? `rekap-karyawan-${period.startDate}_${period.endDate}`
+        : `rekap-karyawan-${period.year}-${String(period.month).padStart(2, "0")}`;
 
       const cleanup = () => {
         if (document.body.contains(printDiv)) document.body.removeChild(printDiv);
