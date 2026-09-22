@@ -28,6 +28,7 @@ const VALID_WORKING_DAYS = [
   "SUNDAY",
 ] as const;
 type WorkingDayCode = (typeof VALID_WORKING_DAYS)[number];
+const EMPTY_ABSENT_DEDUCTIONS = Object.fromEntries(VALID_WORKING_DAYS.map((day) => [day, 0]));
 
 export async function GET() {
   try {
@@ -54,10 +55,22 @@ export async function GET() {
       auth.user.id,
       new Date(),
     );
+    const absentRates = scopedTenantId
+      ? await prisma.$queryRaw<Array<{ day_of_week: string; amount: number }>>`
+          SELECT day_of_week, amount FROM attendance_absent_deductions
+          WHERE tenant_id = ${scopedTenantId}::uuid
+        `
+      : [];
 
     return NextResponse.json({
       message: "OK",
-      data: cfg ?? DEFAULT_CONFIG,
+      data: {
+        ...(cfg ?? DEFAULT_CONFIG),
+        absentDeductionByDay: {
+          ...EMPTY_ABSENT_DEDUCTIONS,
+          ...Object.fromEntries(absentRates.map((rate) => [rate.day_of_week, rate.amount])),
+        },
+      },
       isDefault: !cfg,
       effectiveWorkSchedule: workSchedule
         ? {
@@ -68,7 +81,8 @@ export async function GET() {
           }
         : null,
     });
-  } catch {
+  } catch (error) {
+    console.error("Failed to fetch attendance config", error);
     return NextResponse.json(
       { message: "Failed to fetch attendance config" },
       { status: 500 },
@@ -89,6 +103,12 @@ export async function PUT(req: NextRequest) {
     const officeEndTime = String(body.officeEndTime || "").trim();
     const lateToleranceMinutes = Number(body.lateToleranceMinutes);
     const lateDeductionAmount = Number(body.lateDeductionAmount);
+    const absentDeductionInput = body.absentDeductionByDay;
+    if (!absentDeductionInput || typeof absentDeductionInput !== "object" || Array.isArray(absentDeductionInput) ||
+      VALID_WORKING_DAYS.some((day) => !Number.isSafeInteger(Number(absentDeductionInput[day])) || Number(absentDeductionInput[day]) < 0)) {
+      return NextResponse.json({ message: "Potongan tidak hadir harus berupa angka bulat >= 0 untuk setiap hari" }, { status: 400 });
+    }
+    const absentDeductionByDay = Object.fromEntries(VALID_WORKING_DAYS.map((day) => [day, Number(absentDeductionInput[day])]));
     const overtimeThresholdHours = Number(body.overtimeThresholdHours ?? 2);
     if (!Number.isFinite(overtimeThresholdHours) || overtimeThresholdHours < 0 || overtimeThresholdHours > 24) {
       return NextResponse.json({ message: "Minimal lembur harus antara 0 dan 24 jam" }, { status: 400 });
@@ -147,23 +167,29 @@ export async function PUT(req: NextRequest) {
       workingDays,
     };
 
-    const saved = existing
-      ? await prisma.attendanceConfig.update({
-          where: { id: existing.id },
-          data,
-        })
-      : await prisma.attendanceConfig.create({
-          data: {
-            ...data,
-            ...(scopedTenantId ? { tenantId: scopedTenantId } : {}),
-          },
-        });
+    if (!scopedTenantId) {
+      return NextResponse.json({ message: "Tenant wajib dipilih" }, { status: 400 });
+    }
+    const saved = await prisma.$transaction(async (tx) => {
+      const config = existing
+        ? await tx.attendanceConfig.update({ where: { id: existing.id }, data })
+        : await tx.attendanceConfig.create({ data: { ...data, tenantId: scopedTenantId } });
+      for (const day of VALID_WORKING_DAYS) {
+        await tx.$executeRaw`
+          INSERT INTO attendance_absent_deductions (id, tenant_id, day_of_week, amount)
+          VALUES (gen_random_uuid(), ${scopedTenantId}::uuid, ${day}, ${absentDeductionByDay[day]})
+          ON CONFLICT (tenant_id, day_of_week) DO UPDATE SET amount = EXCLUDED.amount
+        `;
+      }
+      return config;
+    });
 
     return NextResponse.json({
       message: "Attendance config updated",
-      data: saved,
+      data: { ...saved, absentDeductionByDay },
     });
-  } catch {
+  } catch (error) {
+    console.error("Failed to update attendance config", error);
     return NextResponse.json(
       { message: "Failed to update attendance config" },
       { status: 500 },
