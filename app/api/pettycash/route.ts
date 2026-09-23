@@ -5,6 +5,7 @@ import type { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { ensureTenantScope, requireSessionUser } from "@/lib/auth/tenant";
 import { requirePermission } from "@/lib/auth/permission";
+import { lockPettyCashJournal, syncPettyCashJournals } from "@/lib/helper/petty-cash-journal";
 
 export async function GET(req: NextRequest) {
   try {
@@ -135,25 +136,28 @@ export async function POST(req: NextRequest) {
     });
     const creatorName = creatorUser?.name || "Admin";
 
-    const pettyCash = await prisma.pettyCash.create({
-      data: {
-        tenantId: scopedTenantId,
-        userId,
-        purpose,
-        category,
-        amount: Number(amount),
-        transferDate: transferDate ? new Date(transferDate) : null,
-        bankName,
-        accountNumber,
-        status: status || "PENDING",
-        createdBy: creatorName,
-      },
-      include: {
-        user: {
-          select: { id: true, name: true, position: true, department: true },
+    const pettyCash = await prisma.$transaction(async (tx) => {
+      await lockPettyCashJournal(tx, scopedTenantId);
+      const created = await tx.pettyCash.create({
+        data: {
+          tenantId: scopedTenantId,
+          userId,
+          purpose,
+          category,
+          amount: Number(amount),
+          transferDate: transferDate ? new Date(transferDate) : null,
+          bankName,
+          accountNumber,
+          status: status || "PENDING",
+          createdBy: creatorName,
         },
-        usages: true,
-      },
+        include: {
+          user: { select: { id: true, name: true, position: true, department: true } },
+          usages: true,
+        },
+      });
+      await syncPettyCashJournals(tx, created, auth.user.id);
+      return created;
     });
 
     return NextResponse.json(

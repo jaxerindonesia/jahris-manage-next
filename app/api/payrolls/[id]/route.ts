@@ -15,6 +15,7 @@ import {
   getApprovedOvertimePayoutSummary,
 } from "@/lib/helper/payroll-overtime";
 import { getPayrollSalarySummary } from "@/lib/helper/payroll-salary";
+import { lockPayrollJournal, syncPayrollJournal } from "@/lib/helper/payroll-journal";
 
 function normalizeComponentValues(items: unknown[], basicSalary: number) {
   return (Array.isArray(items) ? items : []).map((item) => {
@@ -193,30 +194,26 @@ export async function PUT(req: Request, { params }: Params) {
     if (body.status !== undefined) updateData.status = body.status;
     if (body.paidAt) updateData.paidAt = new Date(body.paidAt);
 
-    const [payroll] = await prisma.$transaction([
-      prisma.payroll.update({
-        where: { id: p.id },
-        data: updateData,
-      }),
-      prisma.payrollComponentValue.deleteMany({
-        where: { payrollId: p.id },
-      }),
-      ...(componentValues.length > 0
-        ? [
-            prisma.payrollComponentValue.createMany({
-              data: componentValues.map((item) => ({
-                payrollId: p.id,
-                componentConfigId: item.componentConfigId,
-                nameSnapshot: item.nameSnapshot,
-                typeSnapshot: item.typeSnapshot,
-                inputTypeSnapshot: item.inputTypeSnapshot,
-                amount: item.amount,
-                baseValue: item.baseValue,
-              })),
-            }),
-          ]
-        : []),
-    ]);
+    const payroll = await prisma.$transaction(async (tx) => {
+      await lockPayrollJournal(tx, targetTenantId);
+      const updated = await tx.payroll.update({ where: { id: p.id }, data: updateData });
+      await tx.payrollComponentValue.deleteMany({ where: { payrollId: p.id } });
+      if (componentValues.length > 0) {
+        await tx.payrollComponentValue.createMany({
+          data: componentValues.map((item) => ({
+            payrollId: p.id,
+            componentConfigId: item.componentConfigId,
+            nameSnapshot: item.nameSnapshot,
+            typeSnapshot: item.typeSnapshot,
+            inputTypeSnapshot: item.inputTypeSnapshot,
+            amount: item.amount,
+            baseValue: item.baseValue,
+          })),
+        });
+      }
+      await syncPayrollJournal(tx, updated, auth.user.id);
+      return updated;
+    });
 
     return NextResponse.json({
       message: "Payroll successfully updated",
@@ -244,12 +241,17 @@ export async function DELETE(_: Request, { params }: Params) {
 
     const existing = await prisma.payroll.findFirst({
       where: { id: p.id, ...(scopedTenantId ? { tenantId: scopedTenantId } : {}) },
-      select: { id: true },
+      select: { id: true, tenantId: true },
     });
     if (!existing) return NextResponse.json({ message: "Payroll not found" }, { status: 404 });
 
-    await prisma.payroll.delete({
-      where: { id: p.id },
+    await prisma.$transaction(async (tx) => {
+      await lockPayrollJournal(tx, existing.tenantId);
+      await tx.journal.updateMany({
+        where: { journalNo: `AUTO-PYR-${existing.id}` },
+        data: { status: "VOID" },
+      });
+      await tx.payroll.delete({ where: { id: p.id } });
     });
 
     return NextResponse.json({

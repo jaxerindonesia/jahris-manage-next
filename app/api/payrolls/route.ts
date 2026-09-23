@@ -14,6 +14,7 @@ import {
   getApprovedOvertimePayoutSummary,
 } from "@/lib/helper/payroll-overtime";
 import { getPayrollSalarySummary } from "@/lib/helper/payroll-salary";
+import { lockPayrollJournal, syncPayrollJournal } from "@/lib/helper/payroll-journal";
 
 function buildPayrollReferenceNumber(id: string, createdAt: Date) {
   return `PYR-${createdAt.getFullYear()}-${id.slice(0, 8).toUpperCase()}`;
@@ -264,48 +265,48 @@ export async function POST(req: NextRequest) {
       .filter((item) => item.typeSnapshot === "DEDUCTION")
       .reduce((sum, item) => sum + item.amount, 0);
     const totalSalary = normalizedBasicSalary + allowances - deductions;
-    const payroll = await prisma.payroll.create({
-      data: {
-        tenantId: finalTenantId,
-        userId,
-        month: normalizedMonth,
-        year: normalizedYear,
-        basicSalary: normalizedBasicSalary,
-        salaryType: salarySummary.salaryType,
-        salaryRate: salarySummary.salaryRate,
-        paidAttendanceDays: salarySummary.paidAttendanceDays,
-        lateDeductionRate: salarySummary.lateDeductionRate,
-        lateAttendanceDays: salarySummary.lateAttendanceDays,
-        lateDeductionAmount: salarySummary.lateDeductionAmount,
-        allowances,
-        deductions,
-        totalSalary,
-        status,
-        paidAt: paidAt ? new Date(paidAt) : null,
-      },
-    });
-    const referenceNumber = buildPayrollReferenceNumber(
-      payroll.id,
-      payroll.createdAt,
-    );
-    const payrollWithReference = await prisma.payroll.update({
-      where: { id: payroll.id },
-      data: { referenceNumber },
-    });
-
-    if (normalizedComponentValues.length > 0) {
-      await prisma.payrollComponentValue.createMany({
-        data: normalizedComponentValues.map((item) => ({
-          payrollId: payroll.id,
-          componentConfigId: item.componentConfigId,
-          nameSnapshot: item.nameSnapshot,
-          typeSnapshot: item.typeSnapshot,
-          inputTypeSnapshot: item.inputTypeSnapshot,
-          amount: item.amount,
-          baseValue: item.baseValue,
-        })),
+    const payrollWithReference = await prisma.$transaction(async (tx) => {
+      await lockPayrollJournal(tx, finalTenantId);
+      const payroll = await tx.payroll.create({
+        data: {
+          tenantId: finalTenantId,
+          userId,
+          month: normalizedMonth,
+          year: normalizedYear,
+          basicSalary: normalizedBasicSalary,
+          salaryType: salarySummary.salaryType,
+          salaryRate: salarySummary.salaryRate,
+          paidAttendanceDays: salarySummary.paidAttendanceDays,
+          lateDeductionRate: salarySummary.lateDeductionRate,
+          lateAttendanceDays: salarySummary.lateAttendanceDays,
+          lateDeductionAmount: salarySummary.lateDeductionAmount,
+          allowances,
+          deductions,
+          totalSalary,
+          status,
+          paidAt: paidAt ? new Date(paidAt) : null,
+        },
       });
-    }
+      const updated = await tx.payroll.update({
+        where: { id: payroll.id },
+        data: { referenceNumber: buildPayrollReferenceNumber(payroll.id, payroll.createdAt) },
+      });
+      if (normalizedComponentValues.length > 0) {
+        await tx.payrollComponentValue.createMany({
+          data: normalizedComponentValues.map((item) => ({
+            payrollId: payroll.id,
+            componentConfigId: item.componentConfigId,
+            nameSnapshot: item.nameSnapshot,
+            typeSnapshot: item.typeSnapshot,
+            inputTypeSnapshot: item.inputTypeSnapshot,
+            amount: item.amount,
+            baseValue: item.baseValue,
+          })),
+        });
+      }
+      await syncPayrollJournal(tx, updated, auth.user.id);
+      return updated;
+    });
 
     return NextResponse.json(
       {
