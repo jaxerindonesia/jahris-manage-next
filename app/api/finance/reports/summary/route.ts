@@ -4,6 +4,10 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { ensureTenantScope, requireSessionUser } from "@/lib/auth/tenant";
 import { requirePermission } from "@/lib/auth/permission";
+import { REIMBURSEMENT_JOURNAL_PREFIX } from "@/lib/helper/reimbursement-journal";
+import { PETTY_CASH_JOURNAL_PREFIX } from "@/lib/helper/petty-cash-journal";
+import { OVERTIME_JOURNAL_PREFIX } from "@/lib/helper/overtime-journal";
+import { PAYROLL_JOURNAL_PREFIX } from "@/lib/helper/payroll-journal";
 
 function getMonthKey(date: Date) {
   return new Intl.DateTimeFormat("en-CA", {
@@ -19,9 +23,17 @@ export async function GET() {
   const forbid = requirePermission(auth.user, "finance", "get-all");
   if (forbid) return forbid;
   const scopedTenantId = ensureTenantScope(auth.user);
-  const journalWhere = scopedTenantId
-    ? { creator: { tenantId: scopedTenantId } }
-    : {};
+  const journalWhere = {
+    ...(scopedTenantId ? { creator: { tenantId: scopedTenantId } } : {}),
+    NOT: {
+      OR: [
+        { journalNo: { startsWith: REIMBURSEMENT_JOURNAL_PREFIX } },
+        { journalNo: { startsWith: PETTY_CASH_JOURNAL_PREFIX } },
+        { journalNo: { startsWith: OVERTIME_JOURNAL_PREFIX } },
+        { journalNo: { startsWith: PAYROLL_JOURNAL_PREFIX } },
+      ],
+    },
+  };
 
   const [accountCount, journalCount, postedJournalCount, draftJournalCount, journals, statusGroup] =
     await Promise.all([

@@ -5,6 +5,8 @@ import prisma from "@/lib/prisma";
 import { ensureTenantScope, requireSessionUser } from "@/lib/auth/tenant";
 import { requirePermission } from "@/lib/auth/permission";
 import { writeAuditLog } from "@/lib/security/audit-log";
+import type { Prisma } from "@prisma/client";
+import { lockPettyCashJournal, syncPettyCashJournals } from "@/lib/helper/petty-cash-journal";
 
 type Params = { params: { id: string } };
 
@@ -89,7 +91,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
       status,
     } = body;
 
-    const updateData: any = {};
+    const updateData: Prisma.PettyCashUncheckedUpdateInput = {};
     if (userId !== undefined) updateData.userId = userId;
     if (purpose !== undefined) updateData.purpose = purpose;
     if (category !== undefined) updateData.category = category;
@@ -100,15 +102,18 @@ export async function PUT(req: NextRequest, { params }: Params) {
     if (accountNumber !== undefined) updateData.accountNumber = accountNumber;
     if (status !== undefined) updateData.status = status;
 
-    const updated = await prisma.pettyCash.update({
-      where: { id: p.id },
-      data: updateData,
-      include: {
-        user: {
-          select: { id: true, name: true, position: true, department: true },
+    const updated = await prisma.$transaction(async (tx) => {
+      await lockPettyCashJournal(tx, existing.tenantId);
+      const result = await tx.pettyCash.update({
+        where: { id: p.id },
+        data: updateData,
+        include: {
+          user: { select: { id: true, name: true, position: true, department: true } },
+          usages: true,
         },
-        usages: true,
-      },
+      });
+      await syncPettyCashJournals(tx, result, auth.user.id);
+      return result;
     });
 
     writeAuditLog({
@@ -171,8 +176,18 @@ export async function DELETE(req: Request, { params }: Params) {
       );
     }
 
-    await prisma.pettyCash.delete({
-      where: { id: p.id },
+    await prisma.$transaction(async (tx) => {
+      await lockPettyCashJournal(tx, existing.tenantId);
+      const usages = await tx.pettyCashUsage.findMany({ where: { pettyCashId: existing.id }, select: { id: true } });
+      await tx.journal.updateMany({
+        where: {
+          journalNo: {
+            in: [`AUTO-PC-FUND-${existing.id}`, ...usages.map((usage) => `AUTO-PC-USE-${usage.id}`)],
+          },
+        },
+        data: { status: "VOID" },
+      });
+      await tx.pettyCash.delete({ where: { id: p.id } });
     });
 
     writeAuditLog({

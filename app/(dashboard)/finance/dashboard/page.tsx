@@ -2,6 +2,10 @@ import FinanceDashboardPage from "./components/finance-dashboard-page";
 import type { AccountCategoryDto } from "@/lib/dto/finance-account-category";
 import { requirePermission } from "@/lib/auth/permission";
 import { ensureTenantScope, requireSessionUser } from "@/lib/auth/tenant";
+import { REIMBURSEMENT_JOURNAL_PREFIX } from "@/lib/helper/reimbursement-journal";
+import { PETTY_CASH_JOURNAL_PREFIX } from "@/lib/helper/petty-cash-journal";
+import { OVERTIME_JOURNAL_PREFIX } from "@/lib/helper/overtime-journal";
+import { PAYROLL_JOURNAL_PREFIX } from "@/lib/helper/payroll-journal";
 import prisma from "@/lib/prisma";
 
 type DashboardAccount = {
@@ -46,9 +50,17 @@ export default async function FinanceDashboardRoute() {
   const scopedTenantId = ensureTenantScope(auth.user);
   const summary = await (async () => {
       const accountWhere = scopedTenantId ? { tenantId: scopedTenantId } : {};
-      const journalWhere = scopedTenantId
-        ? { creator: { tenantId: scopedTenantId } }
-        : {};
+      const journalWhere = {
+        ...(scopedTenantId ? { creator: { tenantId: scopedTenantId } } : {}),
+        NOT: {
+          OR: [
+            { journalNo: { startsWith: REIMBURSEMENT_JOURNAL_PREFIX } },
+            { journalNo: { startsWith: PETTY_CASH_JOURNAL_PREFIX } },
+            { journalNo: { startsWith: OVERTIME_JOURNAL_PREFIX } },
+            { journalNo: { startsWith: PAYROLL_JOURNAL_PREFIX } },
+          ],
+        },
+      };
 
       const [accountCount, journalCount, postedJournalCount, draftJournalCount, journals, statusGroup, accounts] =
         await Promise.all([

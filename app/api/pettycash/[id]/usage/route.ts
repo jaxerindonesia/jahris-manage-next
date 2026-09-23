@@ -6,6 +6,8 @@ import { ensureTenantScope, requireSessionUser } from "@/lib/auth/tenant";
 import { buildTenantStorageObjectName } from "@/lib/helper/storage";
 import { uploadBufferToMinio, BUCKET_AVATARS } from "@/lib/minio";
 import { validateAttachmentBuffer } from "@/lib/security/file-validation";
+import { randomUUID } from "crypto";
+import { lockPettyCashJournal, syncPettyCashJournals } from "@/lib/helper/petty-cash-journal";
 
 type Params = { params: { id: string } };
 
@@ -51,15 +53,6 @@ export async function POST(req: NextRequest, { params }: Params) {
       );
     }
 
-    const usage = await prisma.pettyCashUsage.create({
-      data: {
-        pettyCashId: p.id,
-        description,
-        amount: Number(amount),
-        usageDate: new Date(usageDate),
-      },
-    });
-
     let receiptUrl: string | null = null;
 
     if (file && file.size > 0) {
@@ -77,7 +70,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       const fileName = await buildTenantStorageObjectName(
         scopedTenantId,
         "pettycash-receipts",
-        `usage-${usage.id}-${Date.now()}-${file.name.replace(/\s+/g, "_")}`,
+        `usage-${randomUUID()}-${file.name.replace(/\s+/g, "_")}`,
       );
       
       receiptUrl = await uploadBufferToMinio(
@@ -87,11 +80,22 @@ export async function POST(req: NextRequest, { params }: Params) {
         validation.contentType,
       );
 
-      await prisma.pettyCashUsage.update({
-        where: { id: usage.id },
-        data: { receiptUrl },
-      });
     }
+
+    const usage = await prisma.$transaction(async (tx) => {
+      await lockPettyCashJournal(tx, existing.tenantId);
+      const created = await tx.pettyCashUsage.create({
+        data: {
+          pettyCashId: p.id,
+          description,
+          amount: Number(amount),
+          usageDate: new Date(usageDate),
+          receiptUrl,
+        },
+      });
+      await syncPettyCashJournals(tx, existing, auth.user.id);
+      return created;
+    });
 
     return NextResponse.json(
       {
