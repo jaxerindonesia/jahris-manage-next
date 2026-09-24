@@ -58,6 +58,7 @@ export default function FormData({
     useState<PayrollCalculationSummaryDto | null>(null);
   const [formData, setFormData] = useState<PayrollDto>(createDefaultFormData);
   const [periodMode, setPeriodMode] = useState<"month" | "range">("month");
+  const [targetMode, setTargetMode] = useState<"single" | "all">("single");
   const [rangeStartDate, setRangeStartDate] = useState<string>(() => {
     const d = new Date();
     const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -291,6 +292,8 @@ export default function FormData({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...formData,
+          userId: targetMode === "all" ? "" : formData.userId,
+          allEmployees: targetMode === "all",
           allowances: computedAllowances,
           deductions: computedDeductions,
           startDate: periodMode === "range" ? rangeStartDate : undefined,
@@ -299,9 +302,8 @@ export default function FormData({
       });
 
       if (!res.ok) throw new Error(await parseApiError(res, "Gagal menyimpan data"));
-      toast.success(
-        `Data gaji berhasil ${formData.id ? "diupdate" : "disimpan"}!`,
-      );
+      const response = await res.json().catch(() => null);
+      toast.success(response?.message || `Data gaji berhasil ${formData.id ? "diupdate" : "disimpan"}!`);
 
       onSuccess?.();
       onClose();
@@ -321,6 +323,7 @@ export default function FormData({
     if (!isOpen) return;
 
     if (initialData) {
+      setTargetMode("single");
       const baseSalary = Number(initialData.basicSalary || 0);
       const sourceValues = (initialData.componentValues || []).filter(
         (item) =>
@@ -344,6 +347,7 @@ export default function FormData({
     }
 
     const defaultData = createDefaultFormData();
+    setTargetMode("single");
     setOvertimeAmount(0);
     setLateDeductionAmount(0);
     setAbsentDeductionAmount(0);
@@ -368,9 +372,19 @@ export default function FormData({
         <form onSubmit={handleSubmit}>
           <div className="grid gap-4 py-4">
             {/* Employee Name */}
-            <div className="grid gap-2">
-              <Label htmlFor="employeeName">Nama Karyawan</Label>
-              <EmployeeSearchSelect
+            {!formData.id && (
+              <div className="grid gap-2">
+                <Label>Tujuan Payroll</Label>
+                <div className="grid grid-cols-2 gap-2 rounded-lg bg-slate-100 p-1 dark:bg-slate-800">
+                  <Button type="button" variant={targetMode === "single" ? "default" : "ghost"} onClick={() => setTargetMode("single")}>Pilih Karyawan</Button>
+                  <Button type="button" variant={targetMode === "all" ? "default" : "ghost"} onClick={() => setTargetMode("all")}>Seluruh Karyawan</Button>
+                </div>
+              </div>
+            )}
+            {targetMode === "single" ? (
+              <div className="grid gap-2">
+                <Label htmlFor="employeeName">Nama Karyawan</Label>
+                <EmployeeSearchSelect
                 value={formData.userId || ""}
                 onChange={(val) => {
                   const end = new Date(rangeEndDate);
@@ -384,8 +398,44 @@ export default function FormData({
                   });
                 }}
                 placeholder="Pilih Karyawan"
-              />
-            </div>
+                />
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-200">
+                  Payroll akan dibuat untuk seluruh karyawan. Nominal dihitung secara individual berdasarkan data masing-masing karyawan.
+                </div>
+                <div className="rounded-xl border border-slate-200 p-4 dark:border-slate-800 dark:bg-slate-900/40">
+                  <h3 className="font-semibold text-slate-900 dark:text-slate-100">Komponen yang Dihitung Otomatis</h3>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                    Nilai setiap komponen berbeda untuk masing-masing karyawan dan akan tersimpan pada detail payroll mereka.
+                  </p>
+                  <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                    {[
+                      { name: "Gaji Pokok", type: "PENGHASILAN", description: "Sesuai gaji bulanan atau jumlah hari kerja" },
+                      { name: AUTO_OVERTIME_COMPONENT_NAME, type: "PENGHASILAN", description: "Dari lembur yang telah disetujui" },
+                      { name: AUTO_LATE_DEDUCTION_COMPONENT_NAME, type: "POTONGAN", description: "Dari data keterlambatan periode ini" },
+                      { name: AUTO_ABSENT_DEDUCTION_COMPONENT_NAME, type: "POTONGAN", description: "Dari data ketidakhadiran periode ini" },
+                      ...componentConfigs.filter((item) => item.isActive !== false).map((item) => ({
+                        name: item.name,
+                        type: item.type === "EARNING" ? "PENGHASILAN" : "POTONGAN",
+                        description: item.inputType === "PERCENTAGE"
+                          ? `${Number(item.defaultValue || 0)}% dari gaji pokok`
+                          : `Nilai default ${formatCurrency(Number(item.defaultValue || 0))}`,
+                      })),
+                    ].map((item, index) => (
+                      <div key={`${item.name}-${index}`} className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/60">
+                        <div className="flex items-start justify-between gap-2">
+                          <span className="text-sm font-medium text-slate-900 dark:text-slate-100">{item.name}</span>
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${item.type === "POTONGAN" ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300" : "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"}`}>{item.type}</span>
+                        </div>
+                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{item.description}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Period Selection */}
             <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/50 p-3.5 dark:border-slate-800 dark:bg-slate-900/30">
@@ -543,7 +593,7 @@ export default function FormData({
             </div>
 
             {/* Salary Details */}
-            <div className="grid gap-2">
+            {targetMode === "single" && <div className="grid gap-2">
               <Label htmlFor="basicSalary">Gaji Pokok</Label>
               <Input
                 id="basicSalary"
@@ -553,9 +603,9 @@ export default function FormData({
                 disabled
                 required
               />
-            </div>
+            </div>}
 
-            {calculationSummary && (
+            {targetMode === "single" && calculationSummary && (
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm dark:border-slate-800 dark:bg-slate-900/40">
                 {calculationSummary.salaryType === "daily" ? (
                   <p className="text-slate-700 dark:text-slate-300">
@@ -588,7 +638,7 @@ export default function FormData({
               </div>
             )}
 
-            {(componentConfigs.length > 0 || (formData.componentValues?.length ?? 0) > 0) && (
+            {targetMode === "single" && (componentConfigs.length > 0 || (formData.componentValues?.length ?? 0) > 0) && (
               <div className="space-y-4 rounded-xl border border-slate-200 p-4 dark:border-slate-800 dark:bg-slate-900/40">
                 <div>
                   <h3 className="font-semibold text-slate-900 dark:text-slate-100">Komponen Payroll</h3>
@@ -726,7 +776,7 @@ export default function FormData({
             </div>
 
             {/* Total Preview */}
-            <div className="mt-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 dark:border-blue-900/50 dark:bg-blue-950/20">
+            {targetMode === "single" && <div className="mt-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 dark:border-blue-900/50 dark:bg-blue-950/20">
               <p className="mb-1 text-sm text-blue-600 dark:text-blue-300">Total Gaji:</p>
               <p className="text-md font-bold text-blue-600 dark:text-blue-200">
                 {formatCurrency(
@@ -738,7 +788,7 @@ export default function FormData({
               <p className="mt-1 text-xs text-blue-500 dark:text-blue-300/80">
                 Penghasilan tambahan: {formatCurrency(computedAllowances)} | Potongan: {formatCurrency(computedDeductions)}
               </p>
-            </div>
+            </div>}
           </div>
 
           {/* Buttons */}

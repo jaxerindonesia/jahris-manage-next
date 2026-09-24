@@ -640,6 +640,8 @@ model PettyCashUsage {
   amount      Float
   usageDate   DateTime  @map("usage_date")
   receiptUrl  String?   @map("receipt_url")
+  receiptUrls String[]  @default([]) @map("receipt_urls")
+  transactionType String @default("EXPENSE") @map("transaction_type")
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")
   pettyCash   PettyCash @relation(fields: [pettyCashId], references: [id], onDelete: Cascade)

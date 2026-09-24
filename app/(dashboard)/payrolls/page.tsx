@@ -14,6 +14,7 @@ import { CheckCircle, Clock } from "lucide-react";
 import SummaryCard from "./components/summary-card";
 import { ApiResponse } from "@/lib/utils";
 import { parseApiError } from "@/lib/helper/response-api";
+import { buildPayrollBulkPrintHtml } from "@/lib/helper/payroll-bulk-print";
 
 export default function Page() {
   const { checkRole } = usePermission();
@@ -184,11 +185,52 @@ export default function Page() {
     }
   }, [debouncedFilterYear, debouncedSearchTerm, filterEndDate, filterMonth, filterPeriodMode, filterStartDate, filterStatus]);
 
+  const onPrintAll = useCallback(async () => {
+    const printWindow = window.open("", "_blank", "width=1200,height=900");
+    if (!printWindow) return toast.error("Popup PDF diblokir browser. Izinkan popup lalu coba lagi.");
+    try {
+      setIsExporting(true);
+      printWindow.document.write("<p style='font-family:Arial;padding:24px'>Menyiapkan PDF seluruh slip payroll...</p>");
+      const params = new URLSearchParams({ page: "1", limit: "999999" });
+      if (debouncedSearchTerm) params.set("search", debouncedSearchTerm);
+      if (filterPeriodMode === "month") {
+        if (filterMonth !== "all") params.set("month", filterMonth);
+        if (debouncedFilterYear !== "all") params.set("year", debouncedFilterYear);
+      } else {
+        if (filterStartDate) params.set("startDate", filterStartDate);
+        if (filterEndDate) params.set("endDate", filterEndDate);
+      }
+      if (filterStatus !== "all") params.set("status", filterStatus);
+      const res = await fetch(`/api/payrolls?${params.toString()}`);
+      if (!res.ok) throw new Error(await parseApiError(res, "Gagal mengambil seluruh payroll"));
+      const json = await res.json();
+      const payrolls: PayrollDto[] = json.data ?? [];
+      if (!payrolls.length) throw new Error("Tidak ada payroll sesuai filter yang dipilih");
+      let brand: { companyName?: string; logoUrl?: string } = {};
+      try {
+        const user = JSON.parse(localStorage.getItem("hr_user_data") || "{}");
+        brand = { companyName: user.companyName || user.tenantName, logoUrl: user.logoDarkUrl || user.logoUrl || user.tenantLogoDarkUrl || user.tenantLogoUrl };
+      } catch { /* gunakan identitas default */ }
+      printWindow.document.open();
+      printWindow.document.write(buildPayrollBulkPrintHtml(payrolls, brand));
+      printWindow.document.close();
+      const doPrint = () => { printWindow.focus(); printWindow.print(); printWindow.onafterprint = () => printWindow.close(); };
+      if (printWindow.document.readyState === "complete") window.setTimeout(doPrint, 300);
+      else printWindow.onload = () => window.setTimeout(doPrint, 300);
+    } catch (error) {
+      printWindow.close();
+      toast.error(error instanceof Error ? error.message : "Gagal mencetak seluruh payroll");
+    } finally {
+      setIsExporting(false);
+    }
+  }, [debouncedFilterYear, debouncedSearchTerm, filterEndDate, filterMonth, filterPeriodMode, filterStartDate, filterStatus]);
+
   const toolbar = useMemo(() => {
     return headerToolbar({
       actions: {
         onAdd,
         onExport,
+        onPrintAll,
         onOpenConfig: () => setShowConfigModal(true),
         checkRole,
         isExporting,
@@ -214,7 +256,7 @@ export default function Page() {
         setEndDate: setFilterEndDate,
       },
     })
-  }, [searchTerm, filterStatus, filterPeriodMode, filterMonth, filterYear, filterStartDate, filterEndDate, activeFilterCount, clearFilters, onAdd, onExport, isExporting, checkRole, showFilterPanel]);
+  }, [searchTerm, filterStatus, filterPeriodMode, filterMonth, filterYear, filterStartDate, filterEndDate, activeFilterCount, clearFilters, onAdd, onExport, onPrintAll, isExporting, checkRole, showFilterPanel]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);

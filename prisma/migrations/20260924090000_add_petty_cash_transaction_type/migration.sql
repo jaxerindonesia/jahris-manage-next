@@ -1,0 +1,2 @@
+ALTER TABLE "petty_cash_usages"
+ADD COLUMN IF NOT EXISTS "transaction_type" TEXT NOT NULL DEFAULT 'EXPENSE';

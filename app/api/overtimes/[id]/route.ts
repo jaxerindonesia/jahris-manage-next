@@ -7,6 +7,7 @@ import { ensureTenantScope, requireSessionUser } from "@/lib/auth/tenant";
 import { requirePermission } from "@/lib/auth/permission";
 import { BUCKET_AVATARS, deleteFromMinio } from "@/lib/minio";
 import { writeAuditLog } from "@/lib/security/audit-log";
+import { lockOvertimeJournal, syncOvertimeJournal } from "@/lib/helper/overtime-journal";
 
 type Params = { params: { id: string } };
 
@@ -164,15 +165,20 @@ export async function PUT(req: Request, { params }: Params) {
             : rate * (existing.overtimeMinutes / 60);
       }
 
-      const updated = await prisma.overtime.update({
-        where: { id: p.id },
-        data: {
-          status: finalStatus,
-          approvedBy: approverUserId,
-          approvedAt: new Date(),
-          rejectReason: hasRejected ? rejectReason : null,
-          ...paymentData,
-        },
+      const updated = await prisma.$transaction(async (tx) => {
+        await lockOvertimeJournal(tx, existing.tenantId);
+        const result = await tx.overtime.update({
+          where: { id: p.id },
+          data: {
+            status: finalStatus,
+            approvedBy: approverUserId,
+            approvedAt: new Date(),
+            rejectReason: hasRejected ? rejectReason : null,
+            ...paymentData,
+          },
+        });
+        await syncOvertimeJournal(tx, result, auth.user.id);
+        return result;
       });
       writeAuditLog({
         action: nextStatus === "REJECTED" ? "overtimes.reject" : "overtimes.approve",
@@ -192,7 +198,12 @@ export async function PUT(req: Request, { params }: Params) {
       return NextResponse.json({ message: "Approval overtime berhasil diproses", data: updated });
     }
 
-    const updated = await prisma.overtime.update({ where: { id: p.id }, data: updateData });
+    const updated = await prisma.$transaction(async (tx) => {
+      await lockOvertimeJournal(tx, existing.tenantId);
+      const result = await tx.overtime.update({ where: { id: p.id }, data: updateData });
+      await syncOvertimeJournal(tx, result, auth.user.id);
+      return result;
+    });
     return NextResponse.json({ message: "Overtime updated", data: updated });
   } catch {
     return NextResponse.json({ message: "Failed to update overtime" }, { status: 500 });
@@ -218,6 +229,7 @@ export async function DELETE(_: Request, { params }: Params) {
       where: { id: p.id, ...(scopedTenantId ? { tenantId: scopedTenantId } : {}) },
       select: {
         id: true,
+        tenantId: true,
         proofUrl: true,
         checkInFaceImage: true,
         checkOutFaceImage: true,
@@ -226,7 +238,14 @@ export async function DELETE(_: Request, { params }: Params) {
     });
     if (!item) return NextResponse.json({ message: "Overtime not found" }, { status: 404 });
 
-    await prisma.overtime.delete({ where: { id: p.id } });
+    await prisma.$transaction(async (tx) => {
+      await lockOvertimeJournal(tx, item.tenantId);
+      await tx.journal.updateMany({
+        where: { journalNo: `AUTO-OT-${item.id}` },
+        data: { status: "VOID" },
+      });
+      await tx.overtime.delete({ where: { id: p.id } });
+    });
     const evidenceUrls = [item.proofUrl, item.checkInFaceImage, item.checkOutFaceImage].filter(
       (value): value is string => Boolean(value) && value !== item.attendance?.checkInFaceImage && value !== item.attendance?.checkOutFaceImage,
     );
