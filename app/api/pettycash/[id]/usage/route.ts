@@ -44,7 +44,10 @@ export async function POST(req: NextRequest, { params }: Params) {
     const description = formData.get("description") as string;
     const amount = formData.get("amount") as string;
     const usageDate = formData.get("usageDate") as string;
-    const file = formData.get("file") as File | null;
+    const transactionType = String(formData.get("transactionType") || "EXPENSE").toUpperCase();
+    const files = formData.getAll("files").filter((value): value is File => value instanceof File && value.size > 0);
+    const legacyFile = formData.get("file");
+    if (legacyFile instanceof File && legacyFile.size > 0) files.push(legacyFile);
 
     if (!description || !amount || !usageDate) {
       return NextResponse.json(
@@ -53,9 +56,13 @@ export async function POST(req: NextRequest, { params }: Params) {
       );
     }
 
-    let receiptUrl: string | null = null;
+    if (files.length > 5) {
+      return NextResponse.json({ message: "Maksimal 5 bukti untuk setiap transaksi" }, { status: 400 });
+    }
 
-    if (file && file.size > 0) {
+    const receiptUrls: string[] = [];
+
+    for (const file of files) {
       const bytes = await file.arrayBuffer();
       const buffer = Buffer.from(bytes);
       const validation = validateAttachmentBuffer(
@@ -73,13 +80,36 @@ export async function POST(req: NextRequest, { params }: Params) {
         `usage-${randomUUID()}-${file.name.replace(/\s+/g, "_")}`,
       );
       
-      receiptUrl = await uploadBufferToMinio(
+      const receiptUrl = await uploadBufferToMinio(
         buffer,
         fileName,
         BUCKET_AVATARS,
         validation.contentType,
       );
-
+      receiptUrls.push(receiptUrl);
+    }
+    if (!["EXPENSE", "TOP_UP", "RETURN"].includes(transactionType)) {
+      return NextResponse.json({ message: "Jenis transaksi tidak valid" }, { status: 400 });
+    }
+    const transactionAmount = Number(amount);
+    if (!Number.isFinite(transactionAmount) || transactionAmount <= 0) {
+      return NextResponse.json({ message: "Nominal transaksi harus lebih dari nol" }, { status: 400 });
+    }
+    if (transactionType === "TOP_UP" && !isAdminRole) {
+      return NextResponse.json({ message: "Tambahan dana hanya dapat dicatat oleh Finance/Admin" }, { status: 403 });
+    }
+    if (transactionType === "RETURN") {
+      const transactions = await prisma.pettyCashUsage.findMany({
+        where: { pettyCashId: existing.id },
+        select: { amount: true, transactionType: true },
+      });
+      const currentBalance = existing.amount + transactions.reduce(
+        (sum, transaction) => sum + (transaction.transactionType === "TOP_UP" ? transaction.amount : -transaction.amount),
+        0,
+      );
+      if (transactionAmount > currentBalance) {
+        return NextResponse.json({ message: "Nominal pengembalian melebihi sisa saldo" }, { status: 400 });
+      }
     }
 
     const usage = await prisma.$transaction(async (tx) => {
@@ -88,9 +118,11 @@ export async function POST(req: NextRequest, { params }: Params) {
         data: {
           pettyCashId: p.id,
           description,
-          amount: Number(amount),
+          amount: transactionAmount,
           usageDate: new Date(usageDate),
-          receiptUrl,
+          receiptUrl: receiptUrls[0] ?? null,
+          receiptUrls,
+          transactionType,
         },
       });
       await syncPettyCashJournals(tx, existing, auth.user.id);
@@ -102,7 +134,8 @@ export async function POST(req: NextRequest, { params }: Params) {
         message: "Usage reported successfully",
         data: {
           ...usage,
-          receiptUrl,
+          receiptUrl: receiptUrls[0] ?? null,
+          receiptUrls,
         },
       },
       { status: 201 },

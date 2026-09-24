@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -13,15 +13,21 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { Upload, FileText } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import type { PettyCashDto } from "@/lib/dto/petty-cash";
 
 export default function PettyCashUsageModal({
   isOpen,
   pettyCashId,
+  pettyCash,
+  canManage = false,
   onClose,
   onSuccess,
 }: {
   isOpen: boolean;
   pettyCashId: string;
+  pettyCash?: PettyCashDto;
+  canManage?: boolean;
   onClose: () => void;
   onSuccess: () => void;
 }) {
@@ -29,19 +35,12 @@ export default function PettyCashUsageModal({
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState<number>(0);
   const [usageDate, setUsageDate] = useState("");
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [selectedFiles, setSelectedFiles] = useState<Array<{ file: File; previewUrl: string }>>([]);
+  const [transactionType, setTransactionType] = useState<"EXPENSE" | "TOP_UP" | "RETURN">("EXPENSE");
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error("Ukuran file maksimal 5MB");
-      return;
-    }
+    const incomingFiles = Array.from(e.target.files ?? []);
+    if (!incomingFiles.length) return;
 
     const allowedTypes = [
       "image/jpeg",
@@ -50,26 +49,33 @@ export default function PettyCashUsageModal({
       "application/pdf",
     ];
 
-    if (!allowedTypes.includes(file.type)) {
-      toast.error("Format file tidak didukung");
+    if (selectedFiles.length + incomingFiles.length > 5) {
+      toast.error("Maksimal 5 bukti untuk setiap transaksi");
       return;
     }
-
-    setSelectedFile(file);
-
-    if (file.type.startsWith("image/")) {
-      setPreviewUrl(URL.createObjectURL(file));
-    } else {
-      setPreviewUrl("pdf");
+    for (const file of incomingFiles) {
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error(`${file.name}: ukuran file maksimal 5MB`);
+        return;
+      }
+      if (!allowedTypes.includes(file.type)) {
+        toast.error(`${file.name}: format file tidak didukung`);
+        return;
+      }
     }
+    setSelectedFiles((current) => [...current, ...incomingFiles.map((file) => ({
+      file,
+      previewUrl: file.type.startsWith("image/") ? URL.createObjectURL(file) : "pdf",
+    }))]);
+    e.target.value = "";
   };
 
-  const removeFile = () => {
-    setSelectedFile(null);
-    setPreviewUrl(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
+  const removeFile = (index: number) => {
+    setSelectedFiles((current) => {
+      const target = current[index];
+      if (target?.previewUrl !== "pdf") URL.revokeObjectURL(target.previewUrl);
+      return current.filter((_, fileIndex) => fileIndex !== index);
+    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -86,9 +92,8 @@ export default function PettyCashUsageModal({
       fd.append("description", description);
       fd.append("amount", String(amount));
       fd.append("usageDate", usageDate);
-      if (selectedFile) {
-        fd.append("file", selectedFile);
-      }
+      fd.append("transactionType", transactionType);
+      selectedFiles.forEach(({ file }) => fd.append("files", file));
 
       const res = await fetch(`/api/pettycash/${pettyCashId}/usage`, {
         method: "POST",
@@ -100,29 +105,50 @@ export default function PettyCashUsageModal({
         throw new Error(errorData.message || "Gagal melaporkan penggunaan");
       }
 
-      toast.success("Laporan penggunaan petty cash berhasil dikirim!");
+      toast.success("Transaksi petty cash berhasil dicatat!");
       onSuccess();
       onClose();
-    } catch (error: any) {
-      toast.error(error.message || "Terjadi kesalahan");
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : "Terjadi kesalahan");
     } finally {
       setLoading(false);
     }
   };
 
-  const isPdf = previewUrl === "pdf";
+  const transactionCopy = transactionType === "TOP_UP"
+    ? { amount: "Nominal Tambahan Dana (Rp)", date: "Tanggal Transfer Finance", proof: "Bukti Transfer Finance", submit: "Catat Tambahan Dana" }
+    : transactionType === "RETURN"
+      ? { amount: "Nominal Pengembalian (Rp)", date: "Tanggal Pengembalian", proof: "Bukti Transfer Pengembalian", submit: "Catat Pengembalian" }
+      : { amount: "Nominal Pengeluaran (Rp)", date: "Tanggal Digunakan", proof: "Bukti Pengeluaran (Nota / Struk)", submit: "Kirim Laporan" };
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-h-[90vh] w-[calc(100vw-2rem)] max-w-md overflow-y-auto p-4 sm:p-6">
         <DialogHeader>
-          <DialogTitle>Lapor Penggunaan Petty Cash</DialogTitle>
+          <DialogTitle>Catat Transaksi Petty Cash</DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4 pt-2">
+          <div className="space-y-2">
+            <Label>Jenis Transaksi</Label>
+            <Select value={transactionType} onValueChange={(value) => setTransactionType(value as typeof transactionType)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="EXPENSE">Pengeluaran (Kredit)</SelectItem>
+                {canManage ? <SelectItem value="TOP_UP">Tambahan dana Finance (Debit)</SelectItem> : null}
+                <SelectItem value="RETURN">Pengembalian sisa dana (Kredit)</SelectItem>
+              </SelectContent>
+            </Select>
+            {pettyCash ? (
+              <p className="text-xs text-muted-foreground">
+                Saldo saat ini: Rp {(pettyCash.amount + (pettyCash.usages ?? []).reduce((sum, row) =>
+                  sum + (row.transactionType === "TOP_UP" ? row.amount : -row.amount), 0)).toLocaleString("id-ID")}
+              </p>
+            ) : null}
+          </div>
           {/* Digunakan Untuk Apa */}
           <div className="space-y-2">
-            <Label htmlFor="description">Digunakan Untuk Apa?</Label>
+            <Label htmlFor="description">Keterangan Transaksi</Label>
             <Textarea
               id="description"
               placeholder="Jelaskan detail penggunaan dana..."
@@ -134,7 +160,7 @@ export default function PettyCashUsageModal({
 
           {/* Nominal */}
           <div className="space-y-2">
-            <Label htmlFor="amount">Nominal Pengeluaran (Rp)</Label>
+            <Label htmlFor="amount">{transactionCopy.amount}</Label>
             <Input
               id="amount"
               type="text"
@@ -150,7 +176,7 @@ export default function PettyCashUsageModal({
 
           {/* Tanggal Digunakan */}
           <div className="space-y-2">
-            <Label htmlFor="usageDate">Tanggal Digunakan</Label>
+            <Label htmlFor="usageDate">{transactionCopy.date}</Label>
             <Input
               id="usageDate"
               type="date"
@@ -162,57 +188,36 @@ export default function PettyCashUsageModal({
 
           {/* Bukti Pengeluaran */}
           <div className="space-y-2">
-            <Label>Bukti Pengeluaran (Nota / Struk)</Label>
-            {!previewUrl ? (
+            <Label>{transactionCopy.proof}</Label>
+            {selectedFiles.length < 5 ? (
               <label className="flex h-32 w-full cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed px-4 text-center hover:bg-gray-50/50">
                 <Upload className="w-5 h-5 text-gray-400" />
                 <span className="text-xs text-gray-500">
-                  JPG, PNG, WebP, PDF (Maks. 5MB)
+                  Pilih hingga 5 file · JPG, PNG, WebP, PDF (Maks. 5MB/file)
                 </span>
                 <input
-                  ref={fileInputRef}
                   type="file"
+                  multiple
                   accept="image/jpeg,image/png,image/webp,application/pdf"
                   className="hidden"
                   onChange={handleFileChange}
                 />
               </label>
-            ) : (
-              <div className="relative border rounded-xl overflow-hidden bg-gray-50/20">
-                {!isPdf ? (
-                  <img
-                    src={previewUrl}
-                    alt="Preview"
-                    className="w-full max-h-40 object-contain p-2"
-                  />
-                ) : (
-                  <div className="flex items-center gap-3 p-4">
-                    <FileText className="w-6 h-6 text-red-500" />
-                    <span className="text-xs font-semibold text-gray-700">
-                      Dokumen PDF Siap Dikirim
-                    </span>
+            ) : null}
+            {selectedFiles.length > 0 ? (
+              <div className="grid grid-cols-2 gap-2">
+                {selectedFiles.map(({ file, previewUrl }, index) => (
+                  <div key={`${file.name}-${file.lastModified}-${index}`} className="overflow-hidden rounded-lg border bg-gray-50">
+                    {previewUrl === "pdf" ? (
+                      <div className="flex h-24 flex-col items-center justify-center gap-1 p-2 text-center"><FileText className="h-6 w-6 text-red-500" /><span className="max-w-full truncate text-xs">{file.name}</span></div>
+                    ) : (
+                      <img src={previewUrl} alt={`Bukti ${index + 1}`} className="h-24 w-full object-contain p-1" />
+                    )}
+                    <button type="button" onClick={() => removeFile(index)} className="w-full border-t py-1.5 text-xs font-medium text-red-500 hover:bg-red-50">Hapus</button>
                   </div>
-                )}
-                <div className="flex flex-col gap-2 border-t bg-gray-50 p-3 sm:flex-row sm:items-center sm:justify-between">
-                  <label className="text-xs font-medium text-blue-600 cursor-pointer">
-                    Ganti File
-                    <input
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp,application/pdf"
-                      className="hidden"
-                      onChange={handleFileChange}
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    onClick={removeFile}
-                    className="text-xs font-medium text-red-500"
-                  >
-                    Hapus
-                  </button>
-                </div>
+                ))}
               </div>
-            )}
+            ) : null}
           </div>
 
           {/* Actions */}
@@ -221,7 +226,7 @@ export default function PettyCashUsageModal({
               Batal
             </Button>
             <Button type="submit" disabled={loading} className="w-full sm:w-auto">
-              {loading ? "Mengirim..." : "Kirim Laporan"}
+              {loading ? "Mengirim..." : transactionCopy.submit}
             </Button>
           </div>
         </form>

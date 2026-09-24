@@ -1,6 +1,6 @@
 "use client";
 
-import { Download, Edit, Filter, Plus, Printer, Settings, Trash2, X } from "lucide-react";
+import { Download, Edit, FileText, Filter, Plus, Printer, Settings, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { DefaultColumnFormat } from "@/components/dynamic-page";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -19,6 +19,7 @@ interface HeaderToolbarProps {
   actions: {
     onAdd: () => void;
     onExport?: () => void;
+    onPrintAll?: () => void;
     onOpenConfig?: () => void;
     checkRole: (module: string, action: string) => boolean;
     isExporting: boolean;
@@ -166,6 +167,18 @@ export const headerToolbar = ({ actions, filters }: HeaderToolbarProps) => (
           </span>
         )}
       </Button>
+
+      {actions.checkRole(modelName, "export") && (
+        <Button
+          onClick={actions.onPrintAll}
+          disabled={actions.isExporting}
+          variant="outline"
+          className="flex items-center gap-2 border-blue-600 text-blue-700 hover:bg-blue-50 dark:border-blue-500 dark:text-blue-400"
+        >
+          <FileText className="h-4 w-4" />
+          Export PDF
+        </Button>
+      )}
 
       {actions.checkRole(modelName, "export") && (
         <Button

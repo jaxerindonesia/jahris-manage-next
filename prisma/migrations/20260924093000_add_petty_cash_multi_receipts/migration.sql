@@ -1,0 +1,2 @@
+ALTER TABLE "petty_cash_usages"
+ADD COLUMN IF NOT EXISTS "receipt_urls" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[];

@@ -12,8 +12,20 @@ import PettyCashFormData from "./components/form-data";
 import PettyCashUsageModal from "./components/usage-modal";
 import PettyCashDetailModal from "./components/detail-modal";
 
+function getCurrentRole() {
+  if (typeof window === "undefined") return "";
+  try {
+    const user = JSON.parse(localStorage.getItem("hr_user_data") || "{}");
+    return String(user?.roleName || user?.role || "").toLowerCase().replace(/\s/g, "");
+  } catch {
+    return "";
+  }
+}
+
 export default function Page() {
   const { checkRole } = usePermission();
+  const currentRole = getCurrentRole();
+  const canManageTopUp = currentRole !== "" && currentRole !== "karyawan" && checkRole("pettycash", "update");
   const [data, setData] = useState<PettyCashDto[]>([]);
   const [total, setTotal] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
@@ -43,16 +55,16 @@ export default function Page() {
     return count;
   }, [searchTerm, filterCategory, filterStatus]);
 
-  const clearFilters = () => {
+  const clearFilters = useCallback(() => {
     setSearchTerm("");
     setFilterCategory("all");
     setFilterStatus("all");
-  };
+  }, []);
 
-  const onAdd = () => {
+  const onAdd = useCallback(() => {
     setDetailItem(undefined);
     setShowFormModal(true);
-  };
+  }, []);
 
   const onView = async (id: string) => {
     await fetchDetail(id);
@@ -85,7 +97,7 @@ export default function Page() {
     }
   };
 
-  const onExport = async () => {
+  const onExport = useCallback(async () => {
     try {
       setIsExporting(true);
 
@@ -104,14 +116,18 @@ export default function Page() {
       const XLSX = await import("xlsx");
 
       const rows = allData.map((r) => {
-        const totalUsed = r.usages?.reduce((sum, u) => sum + u.amount, 0) || 0;
+        const totalUsed = r.usages?.filter((u) => u.transactionType !== "TOP_UP" && u.transactionType !== "RETURN").reduce((sum, u) => sum + u.amount, 0) || 0;
+        const totalTopUp = r.usages?.filter((u) => u.transactionType === "TOP_UP").reduce((sum, u) => sum + u.amount, 0) || 0;
+        const totalReturn = r.usages?.filter((u) => u.transactionType === "RETURN").reduce((sum, u) => sum + u.amount, 0) || 0;
         return {
           "Nama Karyawan": r.user?.name ?? "-",
           Tujuan: r.purpose ?? "-",
           Kategori: r.category ?? "-",
           "Nominal Dana": r.amount,
           "Total Digunakan": totalUsed,
-          "Sisa Saldo": r.amount - totalUsed,
+          "Tambahan Dana": totalTopUp,
+          "Dana Dikembalikan": totalReturn,
+          "Sisa Saldo": r.amount + totalTopUp - totalUsed - totalReturn,
           Bank: r.bankName ?? "-",
           "No. Rekening": r.accountNumber ?? "-",
           Status: STATUS_LABEL[r.status] ?? r.status,
@@ -149,7 +165,7 @@ export default function Page() {
     } finally {
       setIsExporting(false);
     }
-  };
+  }, [filterCategory, filterStatus, searchTerm]);
 
   const toolbar = useMemo(() => {
     return headerToolbar({
@@ -172,7 +188,7 @@ export default function Page() {
         setStatus: setFilterStatus,
       },
     })
-  }, [searchTerm, filterCategory, filterStatus, activeFilterCount, clearFilters, onAdd, onExport, isExporting]);
+  }, [searchTerm, filterCategory, filterStatus, activeFilterCount, clearFilters, onAdd, onExport, isExporting, checkRole, showFilterPanel]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -252,6 +268,8 @@ export default function Page() {
       <PettyCashUsageModal
         isOpen={showUsageModal}
         pettyCashId={detailItem?.id || ""}
+        pettyCash={detailItem}
+        canManage={canManageTopUp}
         onClose={() => {
           setShowUsageModal(false);
           setDetailItem(undefined);
