@@ -28,5 +28,7 @@ export interface PayrollDto {
     user?: {
         id: string;
         name: string;
+        position?: string | null;
+        department?: string | { name?: string | null } | null;
     } | null;
 }

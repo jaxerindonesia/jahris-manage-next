@@ -5,6 +5,8 @@ export interface PettyCashUsageDto {
   amount: number;
   usageDate: string | Date;
   receiptUrl?: string | null;
+  receiptUrls?: string[];
+  transactionType?: "EXPENSE" | "TOP_UP" | "RETURN";
   createdAt?: Date | null;
   updatedAt?: Date | null;
 }

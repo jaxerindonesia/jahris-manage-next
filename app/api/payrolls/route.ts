@@ -5,14 +5,9 @@ import type { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { ensureTenantScope, requireSessionUser } from "@/lib/auth/tenant";
 import { requirePermission } from "@/lib/auth/permission";
-import {
-  AUTO_LATE_DEDUCTION_COMPONENT_NAME,
-  AUTO_ABSENT_DEDUCTION_COMPONENT_NAME,
-  AUTO_OVERTIME_COMPONENT_NAME,
-} from "@/lib/constants/payroll";
-import {
-  getApprovedOvertimePayoutSummary,
-} from "@/lib/helper/payroll-overtime";
+import { createPayrollForUser } from "@/lib/helper/payroll-create";
+import { AUTO_ABSENT_DEDUCTION_COMPONENT_NAME, AUTO_LATE_DEDUCTION_COMPONENT_NAME, AUTO_OVERTIME_COMPONENT_NAME } from "@/lib/constants/payroll";
+import { getApprovedOvertimePayoutSummary } from "@/lib/helper/payroll-overtime";
 import { getPayrollSalarySummary } from "@/lib/helper/payroll-salary";
 import { lockPayrollJournal, syncPayrollJournal } from "@/lib/helper/payroll-journal";
 
@@ -24,30 +19,10 @@ function normalizeComponentValues(items: unknown[], basicSalary: number) {
   return (Array.isArray(items) ? items : []).map((item) => {
     const row = item as Record<string, unknown>;
     const inputTypeSnapshot = String(row.inputTypeSnapshot || row.inputType || "MANUAL").toUpperCase();
-    const baseValue =
-      inputTypeSnapshot === "PERCENTAGE"
-        ? Number(row.baseValue ?? row.amount ?? 0)
-        : null;
-    const amount =
-      inputTypeSnapshot === "PERCENTAGE"
-        ? (basicSalary * Number(row.baseValue ?? row.amount ?? 0)) / 100
-        : Number(row.amount || 0);
-
-    return {
-      componentConfigId: row.componentConfigId ? String(row.componentConfigId) : null,
-      nameSnapshot: String(row.nameSnapshot || row.name || "").trim(),
-      typeSnapshot: String(row.typeSnapshot || row.type || "").toUpperCase(),
-      inputTypeSnapshot,
-      amount: Number.isFinite(amount) ? amount : 0,
-      baseValue: baseValue !== null && Number.isFinite(baseValue) ? baseValue : null,
-    };
-  }).filter((item) =>
-    item.nameSnapshot &&
-    item.nameSnapshot !== AUTO_OVERTIME_COMPONENT_NAME &&
-    item.nameSnapshot !== AUTO_LATE_DEDUCTION_COMPONENT_NAME &&
-    item.nameSnapshot !== AUTO_ABSENT_DEDUCTION_COMPONENT_NAME &&
-    ["EARNING", "DEDUCTION"].includes(item.typeSnapshot),
-  );
+    const baseValue = inputTypeSnapshot === "PERCENTAGE" ? Number(row.baseValue ?? row.amount ?? 0) : null;
+    const amount = inputTypeSnapshot === "PERCENTAGE" ? (basicSalary * Number(baseValue || 0)) / 100 : Number(row.amount || 0);
+    return { componentConfigId: row.componentConfigId ? String(row.componentConfigId) : null, nameSnapshot: String(row.nameSnapshot || row.name || "").trim(), typeSnapshot: String(row.typeSnapshot || row.type || "").toUpperCase(), inputTypeSnapshot, amount: Number.isFinite(amount) ? amount : 0, baseValue: baseValue !== null && Number.isFinite(baseValue) ? baseValue : null };
+  }).filter((item) => item.nameSnapshot && ![AUTO_OVERTIME_COMPONENT_NAME, AUTO_LATE_DEDUCTION_COMPONENT_NAME, AUTO_ABSENT_DEDUCTION_COMPONENT_NAME].includes(item.nameSnapshot) && ["EARNING", "DEDUCTION"].includes(item.typeSnapshot));
 }
 
 export async function GET(req: NextRequest) {
@@ -127,8 +102,9 @@ export async function GET(req: NextRequest) {
         take: limit,
         include: {
           user: {
-            select: { id: true, name: true },
+            select: { id: true, name: true, position: true, department: true },
           },
+          componentValues: true,
         },
       }),
       prisma.payroll.count({ where }),
@@ -141,7 +117,7 @@ export async function GET(req: NextRequest) {
       page,
       limit,
     });
-  } catch (error) {
+  } catch {
     return NextResponse.json(
       { message: "Failed to retrieve payroll data" },
       { status: 500 },
@@ -167,9 +143,10 @@ export async function POST(req: NextRequest) {
       componentValues,
       startDate,
       endDate,
+      allEmployees,
     } = body;
 
-    if (!userId || !month || !year || !status) {
+    if ((!userId && !allEmployees) || !month || !year || !status) {
       return NextResponse.json(
         { message: "All payroll fields are required fields" },
         { status: 400 },
@@ -192,6 +169,43 @@ export async function POST(req: NextRequest) {
     }
 
     const scopedTenantId = ensureTenantScope(auth.user);
+    if (allEmployees) {
+      const employees = await prisma.user.findMany({
+        where: {
+          deletedAt: null,
+          ...(scopedTenantId ? { tenantId: scopedTenantId } : {}),
+          role: { name: { equals: "Karyawan", mode: "insensitive" } },
+        },
+        select: { id: true, name: true },
+        orderBy: { name: "asc" },
+      });
+      let created = 0;
+      let skipped = 0;
+      const failures: string[] = [];
+      for (const employee of employees) {
+        try {
+          const payroll = await createPayrollForUser({
+            tenantId: scopedTenantId,
+            userId: employee.id,
+            month: normalizedMonth,
+            year: normalizedYear,
+            status,
+            paidAt,
+            startDate,
+            endDate,
+            creatorId: auth.user.id,
+          });
+          if (payroll) created += 1;
+          else skipped += 1;
+        } catch {
+          failures.push(employee.name);
+        }
+      }
+      return NextResponse.json({
+        message: `${created} payroll berhasil dibuat${skipped ? `, ${skipped} dilewati karena sudah ada` : ""}${failures.length ? `, ${failures.length} gagal` : ""}.`,
+        data: { created, skipped, failed: failures.length, failures },
+      }, { status: failures.length && created === 0 ? 422 : 201 });
+    }
     const salarySummary = await getPayrollSalarySummary({
       tenantId: scopedTenantId,
       userId,

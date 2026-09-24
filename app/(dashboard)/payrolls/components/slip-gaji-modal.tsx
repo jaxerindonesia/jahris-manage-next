@@ -1,15 +1,15 @@
 "use client";
 
-import { X, Printer, Building2, CheckCircle, Clock } from "lucide-react";
+import { X, Printer, CheckCircle, Clock } from "lucide-react";
 import { PayrollDto } from "@/lib/dto/payroll";
 import { months } from "@/lib/helper/date";
 import { formatCurrency } from "@/lib/helper/format-currency";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { AUTO_LATE_DEDUCTION_COMPONENT_NAME } from "@/lib/constants/payroll";
 
 interface SlipGajiModalProps {
     isOpen?: boolean;
-    detailItem?: any;
+    detailItem?: PayrollDto;
     onClose: () => void;
     loading?: boolean;
 }
@@ -30,27 +30,23 @@ export default function SlipGajiModal({
     onClose,
     loading = false,
 }: SlipGajiModalProps) {
-    const [tenantConfig, setTenantConfig] = useState<TenantConfig | null>(null);
-
-    const monthName = months.find((m) => m.value === detailItem?.month)?.label ?? "-";
-    const periodLabel = `${monthName} ${detailItem?.year}`;
-
-    useEffect(() => {
+    const [tenantConfig] = useState<TenantConfig | null>(() => {
+        if (typeof window === "undefined") return null;
         try {
-            const raw = localStorage.getItem("hr_user_data");
-            if (!raw) return;
-
-            const parsed = JSON.parse(raw) as TenantConfig;
-            setTenantConfig({
+            const parsed = JSON.parse(localStorage.getItem("hr_user_data") || "{}") as TenantConfig;
+            return {
                 companyName: parsed.companyName ?? parsed.tenantName ?? null,
                 companyUrl: parsed.companyUrl ?? null,
                 logoUrl: parsed.logoUrl ?? parsed.tenantLogoUrl ?? null,
                 logoDarkUrl: parsed.logoDarkUrl ?? parsed.tenantLogoDarkUrl ?? null,
-            });
+            };
         } catch {
-            setTenantConfig(null);
+            return null;
         }
-    }, []);
+    });
+
+    const monthName = months.find((m) => m.value === detailItem?.month)?.label ?? "-";
+    const periodLabel = `${monthName} ${detailItem?.year}`;
 
     if (!isOpen) return null;
 

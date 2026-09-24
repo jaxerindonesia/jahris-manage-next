@@ -87,15 +87,24 @@ export async function syncPettyCashJournals(
 
   for (const usage of usages) {
     if (!Number.isFinite(usage.amount) || usage.amount <= 0) throw new Error("Nominal pemakaian petty cash harus lebih dari nol");
+    const transactionType = usage.transactionType.toUpperCase();
     const journalNo = `${PETTY_CASH_JOURNAL_PREFIX}USE-${usage.id}`;
+    const isTopUp = transactionType === "TOP_UP";
+    const isReturn = transactionType === "RETURN";
     await upsertJournal(tx, journalNo, {
       journalNo,
       date: usage.usageDate,
       referenceNo: `PETTYCASH-USAGE-${usage.id}`,
-      description: `[AUTO] Pemakaian petty cash ${employee.name} - ${usage.description}`,
+      description: `[AUTO] ${isTopUp ? "Tambahan dana" : isReturn ? "Pengembalian dana" : "Pemakaian petty cash"} ${employee.name} - ${usage.description}`,
       createdBy: creatorId,
       status: "POSTED",
-    }, [
+    }, isTopUp ? [
+      { accountId: cash.id, debit: usage.amount, credit: 0 },
+      { accountId: bank.id, debit: 0, credit: usage.amount },
+    ] : isReturn ? [
+      { accountId: bank.id, debit: usage.amount, credit: 0 },
+      { accountId: cash.id, debit: 0, credit: usage.amount },
+    ] : [
       { accountId: expense.id, debit: usage.amount, credit: 0 },
       { accountId: cash.id, debit: 0, credit: usage.amount },
     ]);

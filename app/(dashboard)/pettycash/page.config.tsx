@@ -1,6 +1,6 @@
 "use client";
 
-import { Download, Edit, Eye, Filter, Info, Plus, Printer, Receipt, Settings, Trash2, X } from "lucide-react";
+import { Download, Edit, Filter, Info, Plus, Receipt, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { DefaultColumnFormat } from "@/components/dynamic-page";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -100,7 +100,7 @@ export const columnFormats: DefaultColumnFormat<PettyCashDto>[] = [
     title: "Total Digunakan",
     textClassName: "text-slate-700 dark:text-slate-200",
     formatter: (_value, row) => {
-      const totalUsed = (row.usages ?? []).reduce((sum: number, usage: { amount: number }) => sum + (usage.amount || 0), 0);
+      const totalUsed = (row.usages ?? []).filter((usage) => usage.transactionType !== "TOP_UP" && usage.transactionType !== "RETURN").reduce((sum, usage) => sum + (usage.amount || 0), 0);
       return `Rp ${totalUsed.toLocaleString("id-ID")}`;
     },
   },
@@ -109,9 +109,8 @@ export const columnFormats: DefaultColumnFormat<PettyCashDto>[] = [
     title: "Sisa Saldo",
     textClassName: "text-slate-700 dark:text-slate-200",
     formatter: (_value, row) => {
-      const totalUsed = (row.usages ?? []).reduce((sum: number, usage: { amount: number }) => sum + (usage.amount || 0), 0);
-      const remaining = (row.amount ?? 0) - totalUsed;
-      return `Rp ${remaining.toLocaleString("id-ID")}`;
+      const remaining = (row.amount ?? 0) + (row.usages ?? []).reduce((sum, usage) => sum + (usage.transactionType === "TOP_UP" ? usage.amount : -usage.amount), 0);
+      return <span className={remaining < 0 ? "font-semibold text-red-600" : ""}>Rp {remaining.toLocaleString("id-ID")}</span>;
     },
   },
   {
