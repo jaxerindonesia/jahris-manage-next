@@ -11,10 +11,19 @@ export function usePermission() {
   const [permissions, setPermissions] = useState<Permission[]>([]);
 
   useEffect(() => {
-    const raw = localStorage.getItem("hr_user_role");
-    if (raw) {
-      setPermissions(JSON.parse(raw));
-    }
+    const timer = window.setTimeout(() => {
+      try {
+        const parsed: unknown = JSON.parse(localStorage.getItem("hr_user_role") || "[]");
+        setPermissions(Array.isArray(parsed) ? parsed.filter((permission): permission is Permission =>
+          permission !== null && typeof permission === "object" &&
+          typeof permission.model === "string" && typeof permission.action === "string",
+        ) : []);
+      } catch {
+        setPermissions([]);
+      }
+    }, 0);
+
+    return () => window.clearTimeout(timer);
   }, []);
 
   function checkRole(model: string, action: string) {

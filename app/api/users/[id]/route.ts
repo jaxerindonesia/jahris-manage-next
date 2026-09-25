@@ -46,7 +46,7 @@ export async function GET(_: Request, { params }: Params) {
     }
 
     return NextResponse.json(user);
-  } catch (error) {
+  } catch {
     return NextResponse.json(
       { message: "Failed to retrieve user" },
       { status: 500 },
@@ -184,7 +184,7 @@ export async function PUT(req: Request, { params }: Params) {
       message: "User successfully updated",
       data: user,
     });
-  } catch (error) {
+  } catch {
     return NextResponse.json(
       { message: "Failed to update user" },
       { status: 500 },
@@ -231,7 +231,7 @@ export async function DELETE(_: Request, { params }: Params) {
     return NextResponse.json({
       message: "User successfully deleted",
     });
-  } catch (error) {
+  } catch {
     return NextResponse.json(
       { message: "Failed to delete user" },
       { status: 500 },

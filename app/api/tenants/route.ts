@@ -3,7 +3,6 @@ export const runtime = "nodejs";
 import { NextRequest, NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import bcrypt from "bcryptjs";
-import { randomBytes } from "crypto";
 import prisma from "@/lib/prisma";
 import { requireSessionUser, requireSuperAdmin } from "@/lib/auth/tenant";
 

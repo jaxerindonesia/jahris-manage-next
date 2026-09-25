@@ -1,4 +1,5 @@
 import { cookies, headers } from "next/headers";
+import { unstable_rethrow } from "next/navigation";
 import jwt from "jsonwebtoken";
 import prisma from "@/lib/prisma";
 import { writeAuditLog } from "@/lib/security/audit-log";
@@ -16,6 +17,7 @@ type SessionFailureReason =
   | "missing_subject"
   | "user_not_found"
   | "user_deleted"
+  | "missing_tenant"
   | "token_mismatch"
   | "tenant_inactive"
   | "tenant_subscription_expired"
@@ -127,6 +129,14 @@ export async function getSessionUser(): Promise<SessionValidationResult> {
         userId: user.id,
       };
     }
+    if (!isSuperAdmin(user.role.name) && !user.tenantId) {
+      return {
+        ok: false,
+        reason: "missing_tenant",
+        tokenPresent: true,
+        userId: user.id,
+      };
+    }
     if (!user.currentToken || user.currentToken !== token) {
       return {
         ok: false,
@@ -180,6 +190,10 @@ export async function getSessionUser(): Promise<SessionValidationResult> {
       },
     };
   } catch (error) {
+    // Next.js uses framework-owned exceptions to opt routes into dynamic
+    // rendering. They must not be converted into authentication failures.
+    unstable_rethrow(error);
+
     const detail = error instanceof Error ? error.message : "Unknown session error";
     const isJwtError =
       error instanceof jwt.JsonWebTokenError ||

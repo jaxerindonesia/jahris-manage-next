@@ -58,7 +58,7 @@ export async function GET(_: Request, { params }: Params) {
       ...performance,
       kpiBreakdown: kpi.kpiBreakdown,
     });
-  } catch (error) {
+  } catch {
     return NextResponse.json(
       { message: "Failed to retrieve performance" },
       { status: 500 }

@@ -16,7 +16,7 @@ import {
 
 const DEFAULT_FORM_DATA: RoleDto = {
   name: "",
-  permission: {},
+  permission: [],
 };
 
 export default function Page() {
