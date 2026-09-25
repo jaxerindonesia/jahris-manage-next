@@ -3,7 +3,6 @@
 import React, { useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useTheme } from "@/contexts/ThemeContext";
 import {
   Eye,
   EyeOff,
@@ -103,7 +102,7 @@ export default function RegisterPage() {
       }
 
       router.push("/login");
-    } catch (err) {
+    } catch {
       setError("An unexpected error occurred. Please try again.");
       setIsLoading(false);
     }

@@ -82,7 +82,7 @@ export async function GET(_: Request, { params }: Params) {
     }
 
     return NextResponse.json({ message: "Success", data: item });
-  } catch (error) {
+  } catch {
     return NextResponse.json(
       { message: "Failed to retrieve payroll" },
       { status: 500 }
@@ -222,7 +222,7 @@ export async function PUT(req: Request, { params }: Params) {
         componentValues,
       },
     });
-  } catch (error) {
+  } catch {
     return NextResponse.json(
       { message: "Failed to update payroll" },
       { status: 500 }

@@ -34,7 +34,7 @@ export async function GET(_: Request, { params }: Params) {
     }
 
     return NextResponse.json(submissionType);
-  } catch (error) {
+  } catch {
     return NextResponse.json(
       { message: "Failed to retrieve submission type" },
       { status: 500 }
@@ -59,7 +59,7 @@ export async function PUT(req: Request, { params }: Params) {
 
     const body = await req.json();
 
-    const updateData: any = {};
+    const updateData: Prisma.SubmissionTypeUpdateInput = {};
 
     if (body.name) updateData.name = body.name;
 
@@ -115,7 +115,7 @@ export async function DELETE(_: Request, { params }: Params) {
     return NextResponse.json({
       message: "Submission type successfully deleted",
     });
-  } catch (error) {
+  } catch {
     return NextResponse.json(
       { message: "Failed to delete submission type" },
       { status: 500 }

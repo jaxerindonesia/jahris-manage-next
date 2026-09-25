@@ -16,13 +16,8 @@ import {
 } from "@/components/ui/select";
 import { FormDataProps, FormState } from "../page.config";
 
-export default function FormData({
-  isOpen,
-  initialData,
-  onClose,
-  onSuccess,
-}: FormDataProps) {
-  const createInitialFormState = (): FormState => ({
+function createInitialFormState(initialData?: FormDataProps["initialData"]): FormState {
+  return {
     companyName: initialData?.companyName || "",
     adminEmail: initialData?.adminEmail || "",
     isActive: initialData?.isActive ?? true,
@@ -34,17 +29,24 @@ export default function FormData({
     subscriptionEnd: initialData?.subscriptionEnd
       ? new Date(initialData.subscriptionEnd).toISOString().slice(0, 10)
       : "",
-  });
+  };
+}
 
+export default function FormData({
+  isOpen,
+  initialData,
+  onClose,
+  onSuccess,
+}: FormDataProps) {
   const [loading, setLoading] = useState(false);
   const [imageLightBase64, setImageLightBase64] = useState<string | null>(null);
   const [imageDarkBase64, setImageDarkBase64] = useState<string | null>(null);
-  const [form, setForm] = useState<FormState>(createInitialFormState);
+  const [form, setForm] = useState<FormState>(() => createInitialFormState(initialData));
 
   useEffect(() => {
     if (!isOpen) return;
 
-    setForm(createInitialFormState());
+    setForm(createInitialFormState(initialData));
     setImageLightBase64(null);
     setImageDarkBase64(null);
   }, [initialData, isOpen]);

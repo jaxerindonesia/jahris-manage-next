@@ -64,7 +64,7 @@ export async function GET(req: NextRequest) {
       page,
       limit,
     });
-  } catch (error) {
+  } catch {
     return NextResponse.json(
       { message: "Failed to retrieve performance data" },
       { status: 500 },

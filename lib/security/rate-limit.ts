@@ -20,7 +20,6 @@ type ConsumeRateLimitResult = {
 };
 
 declare global {
-  // eslint-disable-next-line no-var
   var __jaxerRateLimitStore: Map<string, RateLimitEntry> | undefined;
 }
 
@@ -89,7 +88,6 @@ type RedisConnectionConfig = {
 };
 
 declare global {
-  // eslint-disable-next-line no-var
   var __jaxerRateLimitRedisWarningShown: boolean | undefined;
 }
 
@@ -222,7 +220,7 @@ async function consumeRedisRateLimit({
       return null;
     }
 
-    let count = Number(responses[responses.length - 2]);
+    const count = Number(responses[responses.length - 2]);
     let ttlMs = Number(responses[responses.length - 1]);
 
     if (!Number.isFinite(count)) return null;

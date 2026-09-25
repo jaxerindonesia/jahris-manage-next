@@ -90,7 +90,7 @@ export async function POST(req: NextRequest) {
       },
       { status: 201 },
     );
-  } catch (error) {
+  } catch {
     return NextResponse.json(
       { message: "Failed to register user" },
       { status: 500 },

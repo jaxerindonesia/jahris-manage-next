@@ -4,100 +4,99 @@ import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { getJakartaDayRange } from "@/lib/helper/date";
-
-function isAuthorizedCron(req: NextRequest) {
-  const cronSecret = process.env.CRON_SECRET;
-  if (!cronSecret) return false;
-  const authHeader = req.headers.get("authorization") || "";
-  return authHeader === `Bearer ${cronSecret}`;
-}
+import { getLegacyCheckoutEnd } from "@/lib/helper/attendance-auto-checkout";
 
 export async function GET(req: NextRequest) {
+  const cronSecret = process.env.CRON_SECRET;
+  if (!cronSecret || req.headers.get("authorization") !== `Bearer ${cronSecret}`) {
+    return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+  }
   try {
-    if (!isAuthorizedCron(req)) {
-      return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
-    }
-
-    const { startUtc, endUtc } = getJakartaDayRange();
     const jobRunTime = new Date();
-    const staleCheckInBefore = new Date(jobRunTime.getTime() - 24 * 60 * 60 * 1000);
-
+    const dryRun = req.nextUrl.searchParams.get("dryRun") === "true";
+    const { startUtc, endUtc } = getJakartaDayRange(jobRunTime);
     const openAttendances = await prisma.attendance.findMany({
       where: {
+        checkIn: { not: null, lte: jobRunTime },
         checkOut: null,
-        scheduledEndAt: { lte: jobRunTime },
-        OR: [{ checkIn: null }, { checkIn: { lte: staleCheckInBefore } }],
+        OR: [{ scheduledEndAt: { lte: jobRunTime } }, { scheduledEndAt: null }],
       },
       select: {
-        id: true,
-        userId: true,
-        tenantId: true,
-        status: true,
-        checkIn: true,
-        scheduledEndAt: true,
+        id: true, tenantId: true, status: true, notes: true, checkIn: true,
+        scheduledEndAt: true, scheduleSource: true, workShiftId: true,
       },
     });
 
-    if (openAttendances.length === 0) {
-      return NextResponse.json({
-        message: "Attendance auto checkout job completed",
-        updated: 0,
-        targetDateStart: startUtc.toISOString(),
-        targetDateEnd: endUtc.toISOString(),
+    const legacyConfigs = new Map<string | null, { officeStartTime: string; officeEndTime: string } | null>();
+    let eligible = 0;
+    let updated = 0;
+    let legacyEligible = 0;
+    let skippedMissingSchedule = 0;
+    let skippedNotDue = 0;
+
+    for (const attendance of openAttendances) {
+      if (!attendance.checkIn) continue;
+      let officeEnd = attendance.scheduledEndAt;
+      if (!officeEnd) {
+        // Never substitute regular office hours for a new shift with a missing snapshot.
+        if (attendance.scheduleSource || attendance.workShiftId) {
+          skippedMissingSchedule++;
+          continue;
+        }
+        if (!legacyConfigs.has(attendance.tenantId)) {
+          legacyConfigs.set(attendance.tenantId, await prisma.attendanceConfig.findFirst({
+            where: { tenantId: attendance.tenantId },
+            orderBy: { updatedAt: "desc" },
+            select: { officeStartTime: true, officeEndTime: true },
+          }));
+        }
+        officeEnd = getLegacyCheckoutEnd(attendance.checkIn, legacyConfigs.get(attendance.tenantId) ?? null);
+        if (!officeEnd) {
+          skippedMissingSchedule++;
+          continue;
+        }
+      }
+      if (officeEnd > jobRunTime) {
+        skippedNotDue++;
+        continue;
+      }
+      eligible++;
+      if (!attendance.scheduledEndAt) legacyEligible++;
+      if (dryRun) continue;
+
+      const checkOut = new Date(Math.max(attendance.checkIn.getTime(), officeEnd.getTime()));
+      const minutes = Math.max(0, Math.floor((checkOut.getTime() - attendance.checkIn.getTime()) / 60000));
+      const note = attendance.scheduledEndAt
+        ? "Auto checkout at scheduled shift end"
+        : "Auto checkout using legacy tenant schedule";
+      const result = await prisma.attendance.updateMany({
+        // Preserve concurrent manual checkout and schedule/status edits.
+        where: {
+          id: attendance.id, checkOut: null, checkIn: attendance.checkIn,
+          scheduledEndAt: attendance.scheduledEndAt, status: attendance.status, notes: attendance.notes,
+          scheduleSource: attendance.scheduleSource, workShiftId: attendance.workShiftId,
+        },
+        data: {
+          checkOut, autoCheckout: true,
+          checkOutLocation: Prisma.JsonNull, checkOutFaceImage: null,
+          workHours: `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`,
+          notes: attendance.notes ? `${attendance.notes}\n${note}` : note,
+          status: attendance.status === "Late" ? "Late - Present" : "Present",
+        },
       });
+      updated += result.count;
     }
 
-    const results = await prisma.$transaction(
-      openAttendances.map((attendance) =>
-        {
-          const officeEnd = attendance.scheduledEndAt ?? jobRunTime;
-          const effectiveCheckoutTime = attendance.checkIn
-            ? new Date(Math.max(new Date(attendance.checkIn).getTime(), officeEnd.getTime()))
-            : officeEnd;
-          const wasLate = attendance.status === "Late";
-
-          const status = !attendance.checkIn
-            ? "Absent"
-            : wasLate
-              ? "Late - Present"
-              : "Present";
-
-          return prisma.attendance.updateMany({
-            where: { id: attendance.id, checkOut: null },
-            data: {
-              checkOut: effectiveCheckoutTime,
-              autoCheckout: true,
-              checkOutLocation: Prisma.JsonNull,
-              checkOutFaceImage: null,
-              workHours: attendance.checkIn
-                ? (() => {
-                    const diffMs =
-                      effectiveCheckoutTime.getTime() - new Date(attendance.checkIn).getTime();
-                    const totalMinutes = Math.max(0, Math.floor(diffMs / (1000 * 60)));
-                    const hours = Math.floor(totalMinutes / 60);
-                    const minutes = totalMinutes % 60;
-                    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
-                  })()
-                : "00:00",
-              notes: "Auto checkout at scheduled shift end",
-              status,
-            },
-          });
-        },
-      ),
-    );
-
-    return NextResponse.json({
-      message: "Attendance auto checkout job completed",
-      updated: results.reduce((total, result) => total + result.count, 0),
-      targetDateStart: startUtc.toISOString(),
-      targetDateEnd: endUtc.toISOString(),
-    });
+    const result = {
+      message: "Attendance auto checkout job completed", dryRun,
+      checked: openAttendances.length, eligible, updated, legacyEligible,
+      skippedMissingSchedule, skippedNotDue,
+      targetDateStart: startUtc.toISOString(), targetDateEnd: endUtc.toISOString(),
+    };
+    console.info("CRON ATTENDANCE AUTO CHECKOUT", result);
+    return NextResponse.json(result);
   } catch (error) {
     console.error("CRON ATTENDANCE AUTO CHECKOUT ERROR:", error);
-    return NextResponse.json(
-      { message: "Failed to run attendance auto checkout job" },
-      { status: 500 },
-    );
+    return NextResponse.json({ message: "Failed to run attendance auto checkout job" }, { status: 500 });
   }
 }

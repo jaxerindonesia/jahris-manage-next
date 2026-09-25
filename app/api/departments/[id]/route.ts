@@ -39,7 +39,7 @@ export async function GET(_: Request, { params }: Params) {
     }
 
     return NextResponse.json(department);
-  } catch (error) {
+  } catch {
     return NextResponse.json(
       { message: "Failed to retrieve department" },
       { status: 500 },
@@ -159,7 +159,7 @@ export async function DELETE(_: Request, { params }: Params) {
     return NextResponse.json({
       message: "Department successfully deleted",
     });
-  } catch (error) {
+  } catch {
     return NextResponse.json(
       { message: "Failed to delete department" },
       { status: 500 },

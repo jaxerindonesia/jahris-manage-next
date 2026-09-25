@@ -292,10 +292,13 @@ export const renderActions = ({
   deleteId,
   setDeleteId,
 }: RenderActionsProps) => {
-  const user: any = localStorage.getItem("hr_user_data");
+  const storedUser = localStorage.getItem("hr_user_data");
+  const user = storedUser
+    ? (JSON.parse(storedUser) as { id?: string })
+    : null;
 
   const isApprover = row.approvalDecisions?.some(
-    (config) => config.approverUserId === JSON.parse(user)?.id && config.status == "PENDING"
+    (config) => config.approverUserId === user?.id && config.status === "PENDING"
   );
 
   return (

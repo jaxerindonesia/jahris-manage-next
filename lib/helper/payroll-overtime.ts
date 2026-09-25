@@ -1,5 +1,4 @@
 import prisma from "@/lib/prisma";
-import { AUTO_OVERTIME_COMPONENT_NAME } from "@/lib/constants/payroll";
 
 export async function getApprovedOvertimePayoutSummary(params: {
   tenantId?: string | null;

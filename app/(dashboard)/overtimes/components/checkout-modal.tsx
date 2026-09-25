@@ -36,18 +36,6 @@ export default function CheckoutModal({
   const [fileError, setFileError] = useState("");
 
   useEffect(() => {
-    if (!isOpen) {
-      setSelectedFile(null);
-      setPreviewUrl(null);
-      setFileError("");
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
-      return;
-    }
-  }, [isOpen]);
-
-  useEffect(() => {
     return () => {
       if (previewUrl?.startsWith("blob:")) {
         URL.revokeObjectURL(previewUrl);
@@ -107,6 +95,11 @@ export default function CheckoutModal({
     }
   };
 
+  const handleClose = () => {
+    removeFile();
+    onClose();
+  };
+
   const isPdf = previewUrl === "pdf";
   const handleSubmit = () => {
     if (selectedFile && selectedFile.size > MAX_PROOF_FILE_SIZE) {
@@ -120,7 +113,7 @@ export default function CheckoutModal({
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog open={isOpen} onOpenChange={(open) => !open && handleClose()}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>Check Out Lembur</DialogTitle>
@@ -205,7 +198,7 @@ export default function CheckoutModal({
           </div>
 
           <div className="flex justify-end gap-3 border-t pt-6">
-            <Button type="button" variant="outline" onClick={onClose}>
+            <Button type="button" variant="outline" onClick={handleClose}>
               Batal
             </Button>
             <Button
