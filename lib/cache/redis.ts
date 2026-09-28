@@ -10,7 +10,6 @@ type RedisConnectionConfig = {
 };
 
 declare global {
-  // eslint-disable-next-line no-var
   var __jaxerRedisCacheWarningShown: boolean | undefined;
 }
 

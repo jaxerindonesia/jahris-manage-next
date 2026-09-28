@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import EmployeeSearchSelect from "@/components/employee-search-select";
 
 import { PayrollDto } from "@/lib/dto/payroll";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { months } from "@/lib/helper/date";
@@ -264,6 +264,11 @@ export default function FormData({
     }
   };
 
+  const rebuildComponentValuesRef = useRef(rebuildComponentValues);
+  const fetchPayrollSummaryRef = useRef(fetchPayrollSummary);
+  rebuildComponentValuesRef.current = rebuildComponentValues;
+  fetchPayrollSummaryRef.current = fetchPayrollSummary;
+
   const fetchComponentConfigs = async () => {
     try {
       const res = await fetch("/api/payroll-component-config");
@@ -335,9 +340,9 @@ export default function FormData({
         ...createDefaultFormData(),
         ...initialData,
         userId: initialData.userId || initialData.user?.id || "",
-        componentValues: rebuildComponentValues(baseSalary, sourceValues, 0),
+        componentValues: rebuildComponentValuesRef.current(baseSalary, sourceValues, 0),
       });
-      void fetchPayrollSummary({
+      void fetchPayrollSummaryRef.current({
         userId: initialData.userId || initialData.user?.id || "",
         month: Number(initialData.month || createDefaultFormData().month),
         year: Number(initialData.year || createDefaultFormData().year),
@@ -354,7 +359,7 @@ export default function FormData({
     setCalculationSummary(null);
     setFormData({
       ...defaultData,
-      componentValues: rebuildComponentValues(defaultData.basicSalary, [], 0),
+      componentValues: rebuildComponentValuesRef.current(defaultData.basicSalary, [], 0),
     });
   }, [componentConfigs, initialData, isOpen]);
 

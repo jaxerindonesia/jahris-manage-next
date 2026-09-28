@@ -1,6 +1,7 @@
 export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 
 import prisma from "@/lib/prisma";
 import { ensureTenantScope, requireSessionUser } from "@/lib/auth/tenant";
@@ -116,7 +117,7 @@ export async function PUT(req: Request, { params }: Params) {
       return NextResponse.json({ message: "Approval berhasil diproses", data: updated });
     }
 
-    const updateData: any = {};
+    const updateData: Prisma.SubmissionUncheckedUpdateInput = {};
     let removeProof = false;
     let newFile: File | null = null;
     let nextStartDate: Date | null = null;
@@ -138,8 +139,8 @@ export async function PUT(req: Request, { params }: Params) {
 
       if (userId) updateData.userId = String(userId);
       if (submissionTypeId) updateData.submissionTypeId = String(submissionTypeId);
-      if (startDate) updateData.startDate = nextStartDate;
-      if (endDate) updateData.endDate = nextEndDate;
+      if (startDate && nextStartDate) updateData.startDate = nextStartDate;
+      if (endDate && nextEndDate) updateData.endDate = nextEndDate;
       if (reason !== null) updateData.reason = String(reason);
       if (status) updateData.status = String(status);
     } else {
@@ -148,8 +149,8 @@ export async function PUT(req: Request, { params }: Params) {
 
       if (body.userId) updateData.userId = body.userId;
       if (body.submissionTypeId) updateData.submissionTypeId = body.submissionTypeId;
-      if (body.startDate) updateData.startDate = nextStartDate;
-      if (body.endDate) updateData.endDate = nextEndDate;
+      if (body.startDate && nextStartDate) updateData.startDate = nextStartDate;
+      if (body.endDate && nextEndDate) updateData.endDate = nextEndDate;
       if (body.reason !== undefined) updateData.reason = body.reason;
       if (body.status !== undefined) updateData.status = body.status;
       removeProof = body.removeProof === true;

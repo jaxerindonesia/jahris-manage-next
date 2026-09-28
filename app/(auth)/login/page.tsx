@@ -1,9 +1,8 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useRef } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useTheme } from "@/contexts/ThemeContext";
 import {
   Eye,
   EyeOff,
@@ -23,11 +22,11 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [passwordShake, setPasswordShake] = useState(false);
-  const prevErrorRef = useRef("");
+  const shakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Easter egg states
   const [showCredits, setShowCredits] = useState(false);
-  const [logoClicks, setLogoClicks] = useState(0);
+  const [, setLogoClicks] = useState(0);
   const clickResetTimer = useRef<NodeJS.Timeout | null>(null);
 
   const handleLogoClick = () => {
@@ -50,6 +49,12 @@ export default function LoginPage() {
     email: "",
     password: "",
   });
+
+  const triggerPasswordShake = () => {
+    if (shakeTimerRef.current) clearTimeout(shakeTimerRef.current);
+    setPasswordShake(true);
+    shakeTimerRef.current = setTimeout(() => setPasswordShake(false), 600);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -75,7 +80,7 @@ export default function LoginPage() {
 
       if (!res.ok) {
         setError(data.message || "Login failed");
-        setPasswordShake(true);
+        triggerPasswordShake();
         setIsLoading(false);
         return;
       }
@@ -88,23 +93,12 @@ export default function LoginPage() {
       );
 
       router.push("/dashboard");
-    } catch (err) {
+    } catch {
       setError("An unexpected error occurred. Please try again.");
-      setPasswordShake(true);
+      triggerPasswordShake();
       setIsLoading(false);
     }
   };
-
-  // Trigger password shake animation when error appears
-  useEffect(() => {
-    if (error && error !== prevErrorRef.current) {
-      prevErrorRef.current = error;
-      setPasswordShake(true);
-      const t = setTimeout(() => setPasswordShake(false), 600);
-      return () => clearTimeout(t);
-    }
-    if (!error) prevErrorRef.current = "";
-  }, [error]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (error) setError("");

@@ -4,7 +4,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { MapPin, Timer, Clock3, BadgeCheck, Image as ImageIcon, Calendar } from "lucide-react";
+import { MapPin, Timer, BadgeCheck, Calendar } from "lucide-react";
 import { AttendanceDto } from "@/lib/dto/attendance";
 
 export default function DetailData({

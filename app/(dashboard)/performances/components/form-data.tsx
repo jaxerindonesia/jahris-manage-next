@@ -167,7 +167,7 @@ export default function FormData({
   onClose,
   onSuccess,
 }: {
-  initialData?: any;
+  initialData?: PerformanceDto;
   onClose: () => void;
   onSuccess: () => void;
 }) {
@@ -303,7 +303,7 @@ export default function FormData({
       toast.success(
         `Data penilaian berhasil ${payload.id ? "diupdate" : "disimpan"}!`,
       );
-      onSuccess && onSuccess();
+      onSuccess();
       onClose();
     } catch (error) {
       toast.error(

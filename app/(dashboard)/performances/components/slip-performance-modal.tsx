@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
+import { useTenantConfig } from "@/contexts/TenantConfigContext";
 import {
   AlertCircle,
   BriefcaseBusiness,
-  Gauge,
   Printer,
   ShieldCheck,
   Sparkles,
@@ -53,24 +53,7 @@ export default function SlipPerformanceModal({
   onClose,
   loading = false,
 }: SlipPerformanceModalProps) {
-  const [tenantConfig, setTenantConfig] = useState<TenantConfig | null>(null);
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem("hr_user_data");
-      if (!raw) return;
-
-      const parsed = JSON.parse(raw) as TenantConfig;
-      setTenantConfig({
-        companyName: parsed.companyName ?? parsed.tenantName ?? null,
-        companyUrl: parsed.companyUrl ?? null,
-        logoUrl: parsed.logoUrl ?? parsed.tenantLogoUrl ?? null,
-        logoDarkUrl: parsed.logoDarkUrl ?? parsed.tenantLogoDarkUrl ?? null,
-      });
-    } catch {
-      setTenantConfig(null);
-    }
-  }, []);
+  const tenantConfig = useTenantConfig();
 
   const handlePrint = () => {
     const slip = document.getElementById("performance-print-area");

@@ -48,12 +48,15 @@ export function requireSuperAdmin(user: SessionUser) {
 
 export function ensureTenantScope(user: SessionUser) {
   if (isSuperAdmin(user.roleName)) return null;
+  if (!user.tenantId) throw new Error("Tenant-scoped user is missing tenantId");
   return user.tenantId;
 }
 
 export function tenantWhere(user: SessionUser) {
-  const tenantId = ensureTenantScope(user);
-  if (!tenantId) return {};
+  if (isSuperAdmin(user.roleName)) return {};
+  if (!user.tenantId) {
+    throw new Error("Tenant-scoped user is missing tenantId");
+  }
 
-  return { tenantId };
+  return { tenantId: user.tenantId };
 }
