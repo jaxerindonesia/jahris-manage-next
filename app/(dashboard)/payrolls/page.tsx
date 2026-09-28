@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import DynamicPage from "@/components/dynamic-page";
-import { PayrollDto } from "@/lib/dto/payroll";
+import type { PayrollDto } from "@/lib/dto/payroll";
 import { toast } from "sonner";
 import FormData from "./components/form-data";
 import SlipGajiModal from "./components/slip-gaji-modal";
@@ -10,11 +10,15 @@ import PayrollComponentConfigModal from "./components/payroll-component-config-m
 import { usePermission } from "@/lib/helper/check-role";
 import { months } from "@/lib/helper/date";
 import { ITEMS_PER_PAGE, columnFormats, headerToolbar, renderActions } from "./page.config";
-import { CheckCircle, Clock } from "lucide-react";
+import { AlertTriangle, CheckCircle, Clock, Loader2, Trash2 } from "lucide-react";
+import PaymentDialog from "./components/payment-dialog";
+import type { PayrollPaymentPhase } from "./types";
 import SummaryCard from "./components/summary-card";
-import { ApiResponse } from "@/lib/utils";
+import type { ApiResponse } from "@/lib/utils";
 import { parseApiError } from "@/lib/helper/response-api";
 import { buildPayrollBulkPrintHtml } from "@/lib/helper/payroll-bulk-print";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 export default function Page() {
   const { checkRole } = usePermission();
@@ -40,9 +44,25 @@ export default function Page() {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  const [showBulkPaidModal, setShowBulkPaidModal] = useState(false);
+  const [bulkPaidPhase, setBulkPaidPhase] = useState<PayrollPaymentPhase>("confirm");
+  const isBulkUpdating = bulkPaidPhase === "processing";
+  const paymentRequestPending = useRef(false);
+  const [bulkPaidCount, setBulkPaidCount] = useState(0);
+  const [bulkDeletePhase, setBulkDeletePhase] = useState<"confirm" | "processing" | "success">("confirm");
+  const [bulkDeleteCount, setBulkDeleteCount] = useState(0);
 
   const currentYear = new Date().getFullYear();
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / ITEMS_PER_PAGE)), [total]);
+  const pendingSelectedIds = useMemo(
+    () => data.flatMap((item) =>
+      item.id && selectedIds.has(item.id) && item.status === "PENDING" ? [item.id] : [],
+    ),
+    [data, selectedIds],
+  );
 
   const activeFilterCount = useMemo(() => {
     let count = 0;
@@ -129,6 +149,70 @@ export default function Page() {
       setDeleteId(null);
     }
   };
+
+  const onBulkDelete = useCallback(async () => {
+    const ids = [...selectedIds];
+    if (!ids.length) return;
+    setIsBulkDeleting(true);
+    setBulkDeletePhase("processing");
+    try {
+      const res = await fetch("/api/payrolls/bulk-delete", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.message || "Gagal menghapus payroll terpilih");
+      toast.success(json.message || `${ids.length} payroll berhasil dihapus`);
+      const deletedCount = Number(json.deletedCount || ids.length);
+      setData((current) => current.filter((item) => !item.id || !selectedIds.has(item.id)));
+      setTotal((current) => Math.max(0, current - deletedCount));
+      setSelectedIds(new Set());
+      setBulkDeletePhase("success");
+      await new Promise((resolve) => window.setTimeout(resolve, 1400));
+      setShowBulkDeleteModal(false);
+    } catch (error) {
+      setBulkDeletePhase("confirm");
+      toast.error(error instanceof Error ? error.message : "Gagal menghapus payroll terpilih");
+    } finally {
+      setIsBulkDeleting(false);
+    }
+  }, [selectedIds]);
+
+  const onBulkMarkPaid = useCallback(async () => {
+    if (!pendingSelectedIds.length || paymentRequestPending.current) return;
+    paymentRequestPending.current = true;
+    setBulkPaidPhase("processing");
+    try {
+      const res = await fetch("/api/payrolls/bulk-status", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: pendingSelectedIds, status: "PAID" }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.message || "Gagal memperbarui status payroll");
+
+      const updatedIds = new Set<string>(json.updatedIds || pendingSelectedIds);
+      const paidAt = json.paidAt ? new Date(json.paidAt) : new Date();
+      setData((current) => current.map((item) =>
+        item.id && updatedIds.has(item.id) ? { ...item, status: "PAID", paidAt } : item,
+      ));
+      setSelectedIds(new Set());
+      setBulkPaidCount(updatedIds.size);
+      setBulkPaidPhase("success");
+    } catch (error) {
+      setBulkPaidPhase("confirm");
+      toast.error(error instanceof Error ? error.message : "Gagal memperbarui status payroll");
+    } finally {
+      paymentRequestPending.current = false;
+    }
+  }, [pendingSelectedIds]);
+
+  useEffect(() => {
+    if (!showBulkPaidModal || bulkPaidPhase !== "success") return;
+    const timeout = window.setTimeout(() => setShowBulkPaidModal(false), 3200);
+    return () => window.clearTimeout(timeout);
+  }, [showBulkPaidModal, bulkPaidPhase]);
 
   const onExport = useCallback(async () => {
     setIsExporting(true);
@@ -234,6 +318,20 @@ export default function Page() {
         onOpenConfig: () => setShowConfigModal(true),
         checkRole,
         isExporting,
+        selectedCount: selectedIds.size,
+        onBulkDelete: () => {
+          setBulkDeleteCount(selectedIds.size);
+          setBulkDeletePhase("confirm");
+          setShowBulkDeleteModal(true);
+        },
+        isBulkDeleting,
+        pendingSelectedCount: pendingSelectedIds.length,
+        onBulkMarkPaid: () => {
+          setBulkPaidCount(pendingSelectedIds.length);
+          setBulkPaidPhase("confirm");
+          setShowBulkPaidModal(true);
+        },
+        isBulkUpdating,
       },
       filters: {
         show: showFilterPanel,
@@ -256,7 +354,7 @@ export default function Page() {
         setEndDate: setFilterEndDate,
       },
     })
-  }, [searchTerm, filterStatus, filterPeriodMode, filterMonth, filterYear, filterStartDate, filterEndDate, activeFilterCount, clearFilters, onAdd, onExport, onPrintAll, isExporting, checkRole, showFilterPanel]);
+  }, [searchTerm, filterStatus, filterPeriodMode, filterMonth, filterYear, filterStartDate, filterEndDate, activeFilterCount, clearFilters, onAdd, onExport, onPrintAll, isBulkDeleting, isBulkUpdating, isExporting, pendingSelectedIds.length, selectedIds.size, checkRole, showFilterPanel]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -362,10 +460,84 @@ export default function Page() {
         loading={loading}
         emptyMessage="Belum ada data payroll"
         onPageChange={setCurrentPage}
+        selectedRowIds={checkRole("payrolls", "delete") ? selectedIds : undefined}
+        onRowSelectionChange={(id, selected) => {
+          setSelectedIds((current) => {
+            const next = new Set(current);
+            if (selected) next.add(id); else next.delete(id);
+            return next;
+          });
+        }}
+        onSelectAllChange={(selected) => {
+          setSelectedIds((current) => {
+            const next = new Set(current);
+            data.forEach((row) => {
+              if (!row.id) return;
+              if (selected) next.add(row.id); else next.delete(row.id);
+            });
+            return next;
+          });
+        }}
         renderActions={(row) => renderActions({ row, checkRole, onView, onViewDetail, onDelete, deleteId, setDeleteId })}
       />
 
       {/* ─── Create/Edit Modal ─── */}
+      <PaymentDialog
+        open={showBulkPaidModal}
+        phase={bulkPaidPhase}
+        count={bulkPaidCount}
+        onClose={() => setShowBulkPaidModal(false)}
+        onConfirm={onBulkMarkPaid}
+      />
+
+      <Dialog open={showBulkDeleteModal} onOpenChange={(open) => !isBulkDeleting && setShowBulkDeleteModal(open)}>
+        <DialogContent showCloseButton={!isBulkDeleting} className="overflow-hidden rounded-2xl border-0 bg-white p-0 shadow-2xl dark:bg-slate-900 sm:max-w-md">
+          <div className={`relative overflow-hidden px-6 pb-5 pt-7 transition-colors duration-500 ${bulkDeletePhase === "success" ? "bg-gradient-to-br from-blue-50 via-white to-slate-50 dark:from-blue-950/40 dark:via-slate-900 dark:to-slate-900" : "bg-gradient-to-br from-red-50 via-white to-orange-50 dark:from-red-950/50 dark:via-slate-900 dark:to-orange-950/30"}`}>
+            <div className={`absolute -right-10 -top-10 h-32 w-32 rounded-full blur-2xl transition-colors duration-500 ${bulkDeletePhase === "success" ? "bg-blue-100/60 dark:bg-blue-500/10" : "bg-red-100/60 dark:bg-red-500/10"}`} />
+            <div className="relative flex items-start gap-4">
+              <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ring-8 transition-all duration-500 ${bulkDeletePhase === "success" ? "scale-105 bg-blue-100 text-blue-600 ring-blue-50 shadow-md shadow-blue-500/20 dark:bg-blue-500/15 dark:text-blue-300 dark:ring-blue-500/5" : "bg-red-100 text-red-600 ring-red-50 dark:bg-red-500/15 dark:text-red-400 dark:ring-red-500/5"}`}>
+                {bulkDeletePhase === "processing" ? (
+                  <Loader2 className="h-6 w-6 animate-spin" />
+                ) : bulkDeletePhase === "success" ? (
+                  <CheckCircle className="h-7 w-7 animate-in zoom-in-75 duration-300" />
+                ) : (
+                  <AlertTriangle className="h-6 w-6" />
+                )}
+              </div>
+              <DialogHeader className="gap-2 pr-5 text-left">
+                <DialogTitle className="text-xl text-slate-950 dark:text-white">
+                  {bulkDeletePhase === "processing" ? "Menghapus payroll..." : bulkDeletePhase === "success" ? "Payroll berhasil dihapus!" : "Hapus payroll terpilih?"}
+                </DialogTitle>
+                <DialogDescription className="leading-6 text-slate-600 dark:text-slate-300">
+                  {bulkDeletePhase === "success" ? (
+                    <><strong className="font-semibold text-blue-700 dark:text-blue-300">{bulkDeleteCount} data payroll</strong> berhasil dihapus.</>
+                  ) : (
+                    <>Anda akan menghapus <strong className="font-semibold text-slate-900 dark:text-white">{bulkDeleteCount} data payroll</strong> sekaligus. Jurnal terkait akan dibatalkan otomatis.</>
+                  )}
+                </DialogDescription>
+              </DialogHeader>
+            </div>
+          </div>
+          <div className="px-6 pb-2">
+            <div className={`relative overflow-hidden rounded-xl border px-4 py-3 text-sm leading-5 transition-colors duration-500 ${bulkDeletePhase === "success" ? "border-blue-100 bg-blue-50/70 text-blue-700 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-300" : "border-red-100 bg-red-50/70 text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300"}`}>
+              {bulkDeletePhase === "processing" && <div className="absolute inset-y-0 left-0 w-1/2 animate-pulse bg-gradient-to-r from-transparent via-red-200/70 to-transparent dark:via-red-400/10" />}
+              <span className="relative">
+                {bulkDeletePhase === "processing" ? "Membatalkan jurnal terkait dan menghapus data payroll dengan aman..." : bulkDeletePhase === "success" ? "Selesai! Modal ini akan tertutup otomatis." : "Tindakan ini permanen. Data yang sudah dihapus tidak dapat dikembalikan."}
+              </span>
+            </div>
+          </div>
+          <DialogFooter className="gap-3 px-6 pb-6 pt-3 sm:grid sm:grid-cols-2">
+            <Button type="button" variant="outline" disabled={isBulkDeleting} onClick={() => setShowBulkDeleteModal(false)} className="h-11 rounded-xl border-slate-200 font-semibold dark:border-slate-700">
+              Batal
+            </Button>
+            <Button type="button" variant={bulkDeletePhase === "success" ? "default" : "destructive"} disabled={isBulkDeleting} onClick={onBulkDelete} className={`h-11 rounded-xl font-semibold text-white shadow-lg transition-all duration-300 ${bulkDeletePhase === "success" ? "bg-blue-600 shadow-blue-500/20 hover:bg-blue-600" : "bg-red-600 shadow-red-600/20 hover:-translate-y-0.5 hover:bg-red-700 hover:shadow-xl"}`}>
+              {bulkDeletePhase === "processing" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : bulkDeletePhase === "success" ? <CheckCircle className="mr-2 h-4 w-4 animate-in zoom-in-75 duration-300" /> : <Trash2 className="mr-2 h-4 w-4" />}
+              {bulkDeletePhase === "processing" ? "Menghapus dengan aman..." : bulkDeletePhase === "success" ? "Berhasil Dihapus" : `Hapus ${bulkDeleteCount} Payroll`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <FormData
         isOpen={showFormModal}
         initialData={detailItem}

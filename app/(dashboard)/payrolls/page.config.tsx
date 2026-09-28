@@ -1,6 +1,6 @@
 "use client";
 
-import { Download, Edit, FileText, Filter, Plus, Printer, Settings, Trash2, X } from "lucide-react";
+import { CheckCircle2, Download, Edit, FileText, Filter, Plus, Printer, Settings, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { DefaultColumnFormat } from "@/components/dynamic-page";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -12,7 +12,6 @@ import { formatCurrency } from "@/lib/helper/format-currency";
 import type { PayrollDto } from "@/lib/dto/payroll";
 import type React from "react";
 
-export const itemsPerPageOptions = [5, 10, 25, 50, 100];
 export const ITEMS_PER_PAGE = 10;
 
 interface HeaderToolbarProps {
@@ -23,6 +22,12 @@ interface HeaderToolbarProps {
     onOpenConfig?: () => void;
     checkRole: (module: string, action: string) => boolean;
     isExporting: boolean;
+    selectedCount?: number;
+    onBulkDelete?: () => void;
+    isBulkDeleting?: boolean;
+    pendingSelectedCount?: number;
+    onBulkMarkPaid?: () => void;
+    isBulkUpdating?: boolean;
   };
   filters: {
     show: boolean;
@@ -150,6 +155,29 @@ export const headerToolbar = ({ actions, filters }: HeaderToolbarProps) => (
       )}
 
       <div className="flex-1" />
+
+      {actions.checkRole(modelName, "update") && Boolean(actions.pendingSelectedCount) && (
+        <Button
+          onClick={actions.onBulkMarkPaid}
+          disabled={actions.isBulkUpdating}
+          className="flex items-center gap-2 bg-emerald-600 text-white hover:bg-emerald-700"
+        >
+          <CheckCircle2 className="h-4 w-4" />
+          {actions.isBulkUpdating ? "Memperbarui..." : `Tandai Dibayar (${actions.pendingSelectedCount})`}
+        </Button>
+      )}
+
+      {actions.checkRole(modelName, "delete") && Boolean(actions.selectedCount) && (
+        <Button
+          variant="destructive"
+          onClick={actions.onBulkDelete}
+          disabled={actions.isBulkDeleting}
+          className="flex items-center gap-2"
+        >
+          <Trash2 className="h-4 w-4" />
+          {actions.isBulkDeleting ? "Menghapus..." : `Hapus Terpilih (${actions.selectedCount})`}
+        </Button>
+      )}
 
       <Button
         variant="outline"
