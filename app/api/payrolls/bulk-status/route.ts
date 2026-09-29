@@ -6,6 +6,18 @@ import { ensureTenantScope, requireSessionUser } from "@/lib/auth/tenant";
 import { requirePermission } from "@/lib/auth/permission";
 import { lockPayrollJournal, syncPayrollJournal } from "@/lib/helper/payroll-journal";
 
+const SAFE_JOURNAL_ERRORS = [
+  "Total pembayaran payroll harus lebih dari nol",
+  "Tenant karyawan tidak sesuai dengan payroll",
+];
+
+function getSafeBulkStatusError(error: unknown) {
+  if (!(error instanceof Error)) return null;
+  if (SAFE_JOURNAL_ERRORS.includes(error.message)) return error.message;
+  if (/^Konfigurasi akun .+ tidak sesuai untuk jurnal payroll$/.test(error.message)) return error.message;
+  return null;
+}
+
 export async function PUT(req: Request) {
   try {
     const auth = await requireSessionUser();
@@ -27,6 +39,16 @@ export async function PUT(req: Request) {
     });
     if (!payrolls.length) {
       return NextResponse.json({ message: "Tidak ada payroll Pending yang dapat diperbarui" }, { status: 400 });
+    }
+
+    const invalidAmountCount = payrolls.filter((payroll) => !Number.isFinite(payroll.totalSalary) || payroll.totalSalary <= 0).length;
+    if (invalidAmountCount > 0) {
+      return NextResponse.json(
+        {
+          message: `${invalidAmountCount} payroll memiliki total pembayaran Rp 0. Perbaiki nominal payroll sebelum ditandai Dibayar.`,
+        },
+        { status: 422 },
+      );
     }
 
     const paidAt = new Date();
@@ -56,6 +78,10 @@ export async function PUT(req: Request) {
     });
   } catch (error) {
     console.error("Error bulk updating payroll status:", error);
+    const safeMessage = getSafeBulkStatusError(error);
+    if (safeMessage) {
+      return NextResponse.json({ message: safeMessage }, { status: 422 });
+    }
     return NextResponse.json({ message: "Gagal memperbarui status payroll terpilih" }, { status: 500 });
   }
 }
