@@ -31,18 +31,21 @@ export async function PUT(req: Request) {
 
     const paidAt = new Date();
     const updatedIds: string[] = [];
-    await prisma.$transaction(async (tx) => {
-      const tenantIds = [...new Set(payrolls.map((item) => item.tenantId))];
-      for (const tenantId of tenantIds) await lockPayrollJournal(tx, tenantId);
-      for (const payroll of payrolls) {
-        const updated = await tx.payroll.update({
-          where: { id: payroll.id },
-          data: { status: "PAID", paidAt },
-        });
-        await syncPayrollJournal(tx, updated, auth.user.id);
-        updatedIds.push(updated.id);
-      }
-    });
+    await prisma.$transaction(
+      async (tx) => {
+        const tenantIds = [...new Set(payrolls.map((item) => item.tenantId))];
+        for (const tenantId of tenantIds) await lockPayrollJournal(tx, tenantId);
+        for (const payroll of payrolls) {
+          const updated = await tx.payroll.update({
+            where: { id: payroll.id },
+            data: { status: "PAID", paidAt },
+          });
+          await syncPayrollJournal(tx, updated, auth.user.id);
+          updatedIds.push(updated.id);
+        }
+      },
+      { maxWait: 10_000, timeout: 60_000 },
+    );
 
     return NextResponse.json({
       message: `${updatedIds.length} payroll berhasil ditandai sebagai Dibayar`,
