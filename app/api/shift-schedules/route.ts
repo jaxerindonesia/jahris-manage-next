@@ -24,12 +24,14 @@ export async function GET(req: NextRequest) {
   const search = searchParams.get("search") || "";
   const startDate = searchParams.get("startDate");
   const endDate = searchParams.get("endDate");
+  const activeEmployeesOnly = searchParams.get("activeEmployeesOnly") === "true";
   const scopedTenantId = ensureTenantScope(auth.user);
   const where: Prisma.EmployeeShiftScheduleWhereInput = {
     ...(scopedTenantId ? { tenantId: scopedTenantId } : {}),
     ...(branchId ? { branchId } : {}),
     ...(shiftId === "DAY_OFF" ? { isDayOff: true } : shiftId ? { shiftId } : {}),
-    ...(search ? { user: { OR: [{ name: { contains: search, mode: "insensitive" } }, { nik: { contains: search, mode: "insensitive" } }] } } : {}),
+    ...(activeEmployeesOnly ? { user: { status: "active" } } : {}),
+    ...(search ? { user: { ...(activeEmployeesOnly ? { status: "active" } : {}), OR: [{ name: { contains: search, mode: "insensitive" } }, { nik: { contains: search, mode: "insensitive" } }] } } : {}),
     ...(startDate || endDate ? { workDate: { ...(startDate ? { gte: parseWorkDate(startDate) } : {}), ...(endDate ? { lte: parseWorkDate(endDate) } : {}) } } : {}),
   };
   const [data, total] = await Promise.all([

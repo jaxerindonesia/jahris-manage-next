@@ -269,6 +269,7 @@ export default function EmployeesPage() {
       params.set("limit", "999999");
       if (debouncedSearchTerm) params.set("search", debouncedSearchTerm);
       if (filterStatus !== "all") params.set("status", filterStatus);
+      params.set("status", "active");
       if (filterDepartment !== "all")
         params.set("departmentId", filterDepartment);
       if (filterBranch !== "all") params.set("branchId", filterBranch);
@@ -284,7 +285,9 @@ export default function EmployeesPage() {
       }
 
       const usersJson = await usersRes.json();
-      const allData: UserDto[] = usersJson.data || [];
+      const allData: UserDto[] = (usersJson.data || []).filter(
+        (employee: UserDto) => employee.status === "active",
+      );
       if (allData.length === 0) {
         toast.error("Tidak ada data karyawan untuk didownload");
         return;

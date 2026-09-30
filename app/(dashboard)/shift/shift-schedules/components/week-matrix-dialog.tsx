@@ -70,6 +70,7 @@ export default function WeekMatrixDialog({
       const params = new URLSearchParams({
         page: "1",
         limit: "999999",
+        activeEmployeesOnly: "true",
         branchId,
         startDate: dates[0],
         endDate: dates[6],
