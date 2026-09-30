@@ -58,7 +58,6 @@ export default function FaceRecognitionModal({
   const turnedRightRef = useRef(false);
   const leftTurnFramesRef = useRef(0);
   const rightTurnFramesRef = useRef(0);
-  const centerReturnFramesRef = useRef(0);
   const movementStartedAtRef = useRef(0);
 
   const [status, setStatus] = useState<ScanStatus>("loading-models");
@@ -109,7 +108,6 @@ export default function FaceRecognitionModal({
     turnedRightRef.current = false;
     leftTurnFramesRef.current = 0;
     rightTurnFramesRef.current = 0;
-    centerReturnFramesRef.current = 0;
     movementStartedAtRef.current = 0;
     setStatus("loading-models");
     setMatchScore(null);
@@ -424,7 +422,6 @@ export default function FaceRecognitionModal({
             turnedRightRef.current = false;
             leftTurnFramesRef.current = 0;
             rightTurnFramesRef.current = 0;
-            centerReturnFramesRef.current = 0;
             movementStartedAtRef.current = performance.now();
             setStatus("movement-required");
             scheduleNextFrame();
@@ -441,36 +438,29 @@ export default function FaceRecognitionModal({
           : getYawRatio(detection.landmarks) - baselineYaw;
 
         const REQUIRED_HOLD_FRAMES = 2;
-        const REQUIRED_CENTER_FRAMES = 2;
-        const MINIMUM_MOVEMENT_MS = 1200;
+        const MINIMUM_MOVEMENT_MS = 1000;
 
         if (yawChange <= -0.06) {
           leftTurnFramesRef.current += 1;
           rightTurnFramesRef.current = 0;
-          centerReturnFramesRef.current = 0;
           if (leftTurnFramesRef.current >= REQUIRED_HOLD_FRAMES) {
             turnedLeftRef.current = true;
           }
         } else if (yawChange >= 0.06) {
           rightTurnFramesRef.current += 1;
           leftTurnFramesRef.current = 0;
-          centerReturnFramesRef.current = 0;
           if (rightTurnFramesRef.current >= REQUIRED_HOLD_FRAMES) {
             turnedRightRef.current = true;
           }
         } else {
           leftTurnFramesRef.current = 0;
           rightTurnFramesRef.current = 0;
-          if (turnedLeftRef.current && turnedRightRef.current && Math.abs(yawChange) <= 0.035) {
-            centerReturnFramesRef.current += 1;
-          }
         }
 
         const movementDuration = performance.now() - movementStartedAtRef.current;
         if (
           !turnedLeftRef.current ||
           !turnedRightRef.current ||
-          centerReturnFramesRef.current < REQUIRED_CENTER_FRAMES ||
           movementDuration < MINIMUM_MOVEMENT_MS
         ) {
           setStatus("movement-required");
@@ -538,7 +528,7 @@ export default function FaceRecognitionModal({
       icon: <Camera className="w-5 h-5" />,
     },
     "movement-required": {
-      label: "Gerakkan perlahan ke kanan, kiri, lalu kembali ke tengah",
+      label: "Gerakkan kepala ke kanan dan kiri",
       color: "text-indigo-400",
       icon: <ScanFace className="w-5 h-5 animate-pulse" />,
     },
@@ -656,7 +646,7 @@ export default function FaceRecognitionModal({
           {!shouldSuppressStatusUi && status === "movement-required" && (
             <div className="pointer-events-none absolute inset-x-0 bottom-4 flex justify-center px-3">
               <div className="rounded-full bg-indigo-600/90 px-4 py-2 text-center text-xs font-bold text-white shadow-lg backdrop-blur-sm sm:text-sm">
-                KANAN → KIRI → KEMBALI KE TENGAH
+                GERAKKAN KEPALA KE KANAN DAN KIRI
               </div>
             </div>
           )}
