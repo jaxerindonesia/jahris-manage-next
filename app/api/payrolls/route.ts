@@ -41,10 +41,13 @@ export async function GET(req: NextRequest) {
     const status = searchParams.get("status") || "";
     const startDate = searchParams.get("startDate") || "";
     const endDate = searchParams.get("endDate") || "";
+    const activeEmployeesOnly = searchParams.get("activeEmployeesOnly") === "true";
 
     const where: Prisma.PayrollWhereInput = {};
     const scopedTenantId = ensureTenantScope(auth.user);
     if (scopedTenantId) where.tenantId = scopedTenantId;
+
+    if (activeEmployeesOnly) where.user = { status: "active" };
 
     if (search) {
       where.OR = [

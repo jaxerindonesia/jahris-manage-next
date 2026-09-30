@@ -16,6 +16,7 @@ import { DEFAULT_CONFIG, ITEMS_PER_PAGE, STATUS_LABEL, columnFormats, headerTool
 import LastApproveModal from "./components/last-approve-modal";
 import RejectModal from "./components/reject-modal";
 import { formatTimeId } from "@/lib/helper/date";
+import ExportPeriodDialog, { type ExportPeriod } from "@/components/export-period-dialog";
 
 const LOCATION_OPTIONS: PositionOptions = {
   enableHighAccuracy: true,
@@ -35,7 +36,10 @@ export default function Page() {
   const [searchTerm, setSearchTerm] = useState("");
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
+  const [filterStartDate, setFilterStartDate] = useState("");
+  const [filterEndDate, setFilterEndDate] = useState("");
   const [isExporting, setIsExporting] = useState(false);
+  const [showExportPeriod, setShowExportPeriod] = useState(false);
 
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [showFormModal, setShowFormModal] = useState(false);
@@ -72,8 +76,10 @@ export default function Page() {
     let count = 0;
     if (searchTerm) count++;
     if (filterStatus !== "all") count++;
+    if (filterStartDate) count++;
+    if (filterEndDate) count++;
     return count;
-  }, [searchTerm, filterStatus]);
+  }, [searchTerm, filterStatus, filterStartDate, filterEndDate]);
   const hasOvertimeConfigPermission = useMemo(
     () =>
       permissions.some(
@@ -86,6 +92,8 @@ export default function Page() {
   const clearFilters = useCallback(() => {
     setSearchTerm("");
     setFilterStatus("all");
+    setFilterStartDate("");
+    setFilterEndDate("");
   }, []);
 
   const onAdd = useCallback(() => {
@@ -120,12 +128,18 @@ export default function Page() {
     return { latitude, longitude, accuracy };
   }, []);
 
-  const onExport = useCallback(async () => {
+  const onExport = useCallback(async ({ startDate, endDate }: ExportPeriod) => {
+    if (!startDate || !endDate || startDate > endDate) {
+      toast.error("Pilih rentang tanggal yang valid");
+      return;
+    }
     setIsExporting(true);
     try {
-      const params = new URLSearchParams({ limit: "999999" });
+      const params = new URLSearchParams({ limit: "999999", activeEmployeesOnly: "true" });
       if (debouncedSearchTerm) params.set("search", debouncedSearchTerm);
       if (filterStatus !== "all") params.set("status", filterStatus);
+      params.set("startDate", startDate);
+      params.set("endDate", endDate);
 
       const response = await fetch(`/api/overtimes?${params.toString()}`);
       if (!response.ok) throw new Error(await parseApiError(response, "Gagal mengambil data untuk export"));
@@ -149,7 +163,8 @@ export default function Page() {
       const worksheet = XLSX.utils.json_to_sheet(rows);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "Data Overtime");
-      XLSX.writeFile(workbook, `data-overtime-${new Date().toISOString().split("T")[0]}.xlsx`);
+      XLSX.writeFile(workbook, `data-overtime-${startDate}_${endDate}.xlsx`);
+      setShowExportPeriod(false);
       toast.success(`Berhasil mengexport ${rows.length} data overtime`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Gagal mengexport data");
@@ -191,7 +206,7 @@ export default function Page() {
       headerToolbar({
         actions: {
           onAdd,
-          onExport,
+          onExport: () => setShowExportPeriod(true),
           onCheckIn: currentOvertime?.id ? () => handleCheckIn(currentOvertime.id!) : undefined,
           onCheckOut: currentOvertime?.id ? () => handleCheckOut(currentOvertime.id!) : undefined,
           onOpenConfig: () => {
@@ -214,9 +229,13 @@ export default function Page() {
           setSearchTerm,
           status: filterStatus,
           setStatus: setFilterStatus,
+          startDate: filterStartDate,
+          setStartDate: setFilterStartDate,
+          endDate: filterEndDate,
+          setEndDate: setFilterEndDate,
         },
       }),
-    [activeFilterCount, checkRole, clearFilters, currentOvertime, filterStatus, handleCheckIn, handleCheckOut, isExporting, onAdd, onExport, savedApproverUserIds, savedConfig, searchTerm, showFilterPanel],
+    [activeFilterCount, checkRole, clearFilters, currentOvertime, filterEndDate, filterStartDate, filterStatus, handleCheckIn, handleCheckOut, isExporting, onAdd, savedApproverUserIds, savedConfig, searchTerm, showFilterPanel],
   );
 
   const onDelete = async (id: string) => {
@@ -417,6 +436,8 @@ export default function Page() {
       params.set("limit", String(ITEMS_PER_PAGE));
       if (debouncedSearchTerm) params.set("search", debouncedSearchTerm);
       if (filterStatus !== "all") params.set("status", filterStatus);
+      if (filterStartDate) params.set("startDate", filterStartDate);
+      if (filterEndDate) params.set("endDate", filterEndDate);
 
       const response = await fetch(`/api/overtimes?${params.toString()}`);
       const json: ApiResponse = await response.json().catch(() => ({}));
@@ -434,7 +455,7 @@ export default function Page() {
     } finally {
       setLoading(false);
     }
-  }, [currentPage, debouncedSearchTerm, filterStatus]);
+  }, [currentPage, debouncedSearchTerm, filterEndDate, filterStartDate, filterStatus]);
 
   const fetchDetail = useCallback(async (id: string) => {
     setLoading(true);
@@ -623,6 +644,17 @@ export default function Page() {
         onClose={() => setShowFormModal(false)}
         onSuccess={handleOvertimeFormSuccess}
       />
+
+      {showExportPeriod && checkRole("overtimes", "export") && (
+        <ExportPeriodDialog
+          loading={isExporting}
+          onOpenChange={setShowExportPeriod}
+          onConfirm={onExport}
+          title="Download Data Lembur"
+          description="Pilih rentang tanggal lembur yang akan dimasukkan ke file Excel. Filter pencarian dan status yang aktif tetap diterapkan."
+          idPrefix="overtime-export"
+        />
+      )}
 
       <CheckoutModal
         isOpen={showCheckoutModal}

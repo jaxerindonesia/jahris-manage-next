@@ -200,6 +200,7 @@ export default function FinanceAccountsPage() {
       params.set("limit", "999999");
       if (debouncedSearchTerm) params.set("search", debouncedSearchTerm);
       if (status !== "all") params.set("status", status);
+      params.set("status", "active");
       if (categoryFilter !== "all") params.set("accountCategoryId", categoryFilter);
 
       const response = await fetch(`${ENDPOINT}?${params.toString()}`);

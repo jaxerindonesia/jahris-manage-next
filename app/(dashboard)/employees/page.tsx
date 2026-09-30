@@ -159,6 +159,7 @@ export default function EmployeesPage() {
       params.set("limit", "999999");
       if (debouncedSearchTerm) params.set("search", debouncedSearchTerm);
       if (filterStatus !== "all") params.set("status", filterStatus);
+      params.set("status", "active");
       if (filterDepartment !== "all")
         params.set("departmentId", filterDepartment);
       if (filterBranch !== "all") params.set("branchId", filterBranch);

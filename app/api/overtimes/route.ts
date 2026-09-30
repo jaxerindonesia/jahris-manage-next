@@ -20,11 +20,15 @@ export async function GET(req: NextRequest) {
     const search = (searchParams.get("search") || "").trim();
     const status = searchParams.get("status") || "";
     const overtimeDate = (searchParams.get("overtimeDate") || "").trim();
+    const startDate = (searchParams.get("startDate") || "").trim();
+    const endDate = (searchParams.get("endDate") || "").trim();
     const activeOnly = searchParams.get("activeOnly") === "true";
+    const activeEmployeesOnly = searchParams.get("activeEmployeesOnly") === "true";
     const activeCheckInSince = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
     const where: Prisma.OvertimeWhereInput = {};
     if (scopedTenantId) where.tenantId = scopedTenantId;
+    if (activeEmployeesOnly) where.user = { status: "active" };
     const normalizedRole = auth.user.roleName.toLowerCase().replace(/\s/g, "");
     if (!["superadmin", "admin"].includes(normalizedRole)) {
       where.OR = [
@@ -63,6 +67,18 @@ export async function GET(req: NextRequest) {
           where.overtimeDate = dateFilter;
         }
       }
+    }
+    if (startDate || endDate) {
+      const dateFilter: Prisma.DateTimeFilter = {};
+      if (startDate) {
+        const startValue = new Date(`${startDate}T00:00:00+07:00`);
+        if (!Number.isNaN(startValue.getTime())) dateFilter.gte = startValue;
+      }
+      if (endDate) {
+        const endValue = new Date(`${endDate}T00:00:00+07:00`);
+        if (!Number.isNaN(endValue.getTime())) dateFilter.lt = new Date(endValue.getTime() + 24 * 60 * 60 * 1000);
+      }
+      if (dateFilter.gte || dateFilter.lt) where.overtimeDate = dateFilter;
     }
     if (activeOnly) {
       where.userId = auth.user.id;

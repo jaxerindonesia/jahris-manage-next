@@ -20,13 +20,17 @@ export async function GET(req: NextRequest) {
     const search = searchParams.get("search") || "";
     const period = searchParams.get("period") || "";
     const scoreFilter = searchParams.get("score") || "";
+    const activeEmployeesOnly = searchParams.get("activeEmployeesOnly") === "true";
 
     const where: Prisma.PerformanceWhereInput = {};
     const scopedTenantId = ensureTenantScope(auth.user);
     if (scopedTenantId) where.tenantId = scopedTenantId;
 
+    if (activeEmployeesOnly) where.user = { status: "active" };
+
     if (search) {
       where.user = {
+        ...(activeEmployeesOnly ? { status: "active" } : {}),
         name: { contains: search, mode: "insensitive" },
       };
     }
