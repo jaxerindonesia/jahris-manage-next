@@ -8,7 +8,7 @@ import { usePermission } from "@/lib/helper/check-role";
 import { haversineKm } from "@/lib/helper/attendance";
 import { parseApiError } from "@/lib/helper/response-api";
 import { getJakartaDayKey, getJakartaDayRange } from "@/lib/helper/date";
-import ExportPeriodDialog from "./components/export-period-dialog";
+import ExportPeriodDialog from "@/components/export-period-dialog";
 import type { AttendanceExportPeriod } from "./types";
 import type { AttendanceOvertimeDto } from "@/lib/dto/attendance-overtime";
 import OvertimeConfirmationDialog from "./components/overtime-confirmation-dialog";
@@ -401,6 +401,7 @@ export default function Page() {
       if (["Super Admin", "Admin"].includes(userData.role)) {
         const params = new URLSearchParams();
         params.set("limit", "999999");
+        params.set("activeEmployeesOnly", "true");
         params.set("startDate", startUtc.toISOString());
         params.set("endDate", endUtc.toISOString());
         if (searchTerm) params.set("search", searchTerm);

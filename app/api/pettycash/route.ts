@@ -20,6 +20,7 @@ export async function GET(req: NextRequest) {
     const search = searchParams.get("search") || "";
     const category = searchParams.get("category") || "";
     const status = searchParams.get("status") || "";
+    const activeEmployeesOnly = searchParams.get("activeEmployeesOnly") === "true";
 
     const where: Prisma.PettyCashWhereInput = {};
     const scopedTenantId = ensureTenantScope(auth.user);
@@ -28,6 +29,8 @@ export async function GET(req: NextRequest) {
     const normalizedRole = auth.user.roleName.toLowerCase().replace(/\s/g, "");
     const isAdminRole = normalizedRole !== "karyawan";
     if (!isAdminRole) where.userId = auth.user.id;
+
+    if (activeEmployeesOnly) where.user = { status: "active" };
 
     if (search) {
       where.OR = [

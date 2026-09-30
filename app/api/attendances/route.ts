@@ -21,6 +21,7 @@ export async function GET(req: NextRequest) {
     const status = searchParams.get("status") || "";
     const startDate = searchParams.get("startDate") || "";
     const endDate = searchParams.get("endDate") || "";
+    const activeEmployeesOnly = searchParams.get("activeEmployeesOnly") === "true";
 
     const where: Prisma.AttendanceWhereInput = {};
     const scopedTenantId = ensureTenantScope(auth.user);
@@ -28,9 +29,11 @@ export async function GET(req: NextRequest) {
     const normalizedRole = auth.user.roleName.toLowerCase().replace(/\s/g, "");
     const isAdminRole = normalizedRole !== "karyawan";
     if (!isAdminRole) where.userId = auth.user.id;
+    if (activeEmployeesOnly) where.user = { status: "active" };
     
     if (search) {
       where.user = {
+        ...(activeEmployeesOnly ? { status: "active" } : {}),
         name: { contains: search, mode: "insensitive" },
       };
     }

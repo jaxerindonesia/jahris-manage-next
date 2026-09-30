@@ -19,6 +19,7 @@ import { parseApiError } from "@/lib/helper/response-api";
 import { buildPayrollBulkPrintHtml } from "@/lib/helper/payroll-bulk-print";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import ExportPeriodDialog, { type ExportPeriod } from "@/components/export-period-dialog";
 
 export default function Page() {
   const { checkRole } = usePermission();
@@ -39,6 +40,7 @@ export default function Page() {
   const [filterEndDate, setFilterEndDate] = useState<string>("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [isExporting, setIsExporting] = useState(false);
+  const [exportFormat, setExportFormat] = useState<"excel" | "pdf" | null>(null);
 
   const [showFormModal, setShowFormModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
@@ -214,19 +216,19 @@ export default function Page() {
     return () => window.clearTimeout(timeout);
   }, [showBulkPaidModal, bulkPaidPhase]);
 
-  const onExport = useCallback(async () => {
+  const onExport = useCallback(async ({ startDate, endDate }: ExportPeriod) => {
+    if (!startDate || !endDate || startDate > endDate) {
+      toast.error("Pilih rentang tanggal yang valid");
+      return;
+    }
     setIsExporting(true);
     try {
       const params = new URLSearchParams();
       params.set("limit", "999999");
+      params.set("activeEmployeesOnly", "true");
       if (debouncedSearchTerm) params.set("search", debouncedSearchTerm);
-      if (filterPeriodMode === "month") {
-        if (filterMonth !== "all") params.set("month", filterMonth);
-        if (debouncedFilterYear !== "all") params.set("year", debouncedFilterYear);
-      } else {
-        if (filterStartDate) params.set("startDate", filterStartDate);
-        if (filterEndDate) params.set("endDate", filterEndDate);
-      }
+      params.set("startDate", startDate);
+      params.set("endDate", endDate);
       if (filterStatus !== "all") params.set("status", filterStatus);
 
       const res = await fetch(`/api/payrolls?${params.toString()}`);
@@ -256,9 +258,10 @@ export default function Page() {
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "Data Payroll");
 
-      const fileName = `data-payroll-${new Date().toISOString().split("T")[0]}.xlsx`;
+      const fileName = `data-payroll-${startDate}_${endDate}.xlsx`;
       XLSX.writeFile(workbook, fileName);
 
+      setExportFormat(null);
       toast.success(`Berhasil mengexport ${allData.length} data payroll`);
     } catch (error) {
       toast.error(
@@ -267,23 +270,25 @@ export default function Page() {
     } finally {
       setIsExporting(false);
     }
-  }, [debouncedFilterYear, debouncedSearchTerm, filterEndDate, filterMonth, filterPeriodMode, filterStartDate, filterStatus]);
+  }, [debouncedSearchTerm, filterStatus]);
 
-  const onPrintAll = useCallback(async () => {
+  const onPrintAll = useCallback(async ({ startDate, endDate }: ExportPeriod) => {
+    if (!startDate || !endDate || startDate > endDate) {
+      toast.error("Pilih rentang tanggal yang valid");
+      return;
+    }
     const printWindow = window.open("", "_blank", "width=1200,height=900");
-    if (!printWindow) return toast.error("Popup PDF diblokir browser. Izinkan popup lalu coba lagi.");
+    if (!printWindow) {
+      toast.error("Popup PDF diblokir browser. Izinkan popup lalu coba lagi.");
+      return;
+    }
     try {
       setIsExporting(true);
       printWindow.document.write("<p style='font-family:Arial;padding:24px'>Menyiapkan PDF seluruh slip payroll...</p>");
-      const params = new URLSearchParams({ page: "1", limit: "999999" });
+      const params = new URLSearchParams({ page: "1", limit: "999999", activeEmployeesOnly: "true" });
       if (debouncedSearchTerm) params.set("search", debouncedSearchTerm);
-      if (filterPeriodMode === "month") {
-        if (filterMonth !== "all") params.set("month", filterMonth);
-        if (debouncedFilterYear !== "all") params.set("year", debouncedFilterYear);
-      } else {
-        if (filterStartDate) params.set("startDate", filterStartDate);
-        if (filterEndDate) params.set("endDate", filterEndDate);
-      }
+      params.set("startDate", startDate);
+      params.set("endDate", endDate);
       if (filterStatus !== "all") params.set("status", filterStatus);
       const res = await fetch(`/api/payrolls?${params.toString()}`);
       if (!res.ok) throw new Error(await parseApiError(res, "Gagal mengambil seluruh payroll"));
@@ -298,6 +303,7 @@ export default function Page() {
       printWindow.document.open();
       printWindow.document.write(buildPayrollBulkPrintHtml(payrolls, brand));
       printWindow.document.close();
+      setExportFormat(null);
       const doPrint = () => { printWindow.focus(); printWindow.print(); printWindow.onafterprint = () => printWindow.close(); };
       if (printWindow.document.readyState === "complete") window.setTimeout(doPrint, 300);
       else printWindow.onload = () => window.setTimeout(doPrint, 300);
@@ -307,14 +313,14 @@ export default function Page() {
     } finally {
       setIsExporting(false);
     }
-  }, [debouncedFilterYear, debouncedSearchTerm, filterEndDate, filterMonth, filterPeriodMode, filterStartDate, filterStatus]);
+  }, [debouncedSearchTerm, filterStatus]);
 
   const toolbar = useMemo(() => {
     return headerToolbar({
       actions: {
         onAdd,
-        onExport,
-        onPrintAll,
+        onExport: () => setExportFormat("excel"),
+        onPrintAll: () => setExportFormat("pdf"),
         onOpenConfig: () => setShowConfigModal(true),
         checkRole,
         isExporting,
@@ -354,7 +360,7 @@ export default function Page() {
         setEndDate: setFilterEndDate,
       },
     })
-  }, [searchTerm, filterStatus, filterPeriodMode, filterMonth, filterYear, filterStartDate, filterEndDate, activeFilterCount, clearFilters, onAdd, onExport, onPrintAll, isBulkDeleting, isBulkUpdating, isExporting, pendingSelectedIds.length, selectedIds.size, checkRole, showFilterPanel]);
+  }, [searchTerm, filterStatus, filterPeriodMode, filterMonth, filterYear, filterStartDate, filterEndDate, activeFilterCount, clearFilters, onAdd, isBulkDeleting, isBulkUpdating, isExporting, pendingSelectedIds.length, selectedIds.size, checkRole, showFilterPanel]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -489,6 +495,17 @@ export default function Page() {
         onClose={() => setShowBulkPaidModal(false)}
         onConfirm={onBulkMarkPaid}
       />
+
+      {exportFormat && checkRole("payrolls", "export") && (
+        <ExportPeriodDialog
+          loading={isExporting}
+          onOpenChange={(open) => !open && setExportFormat(null)}
+          onConfirm={exportFormat === "excel" ? onExport : onPrintAll}
+          title={exportFormat === "excel" ? "Download Payroll Excel" : "Download Payroll PDF"}
+          description="Pilih rentang tanggal payroll yang akan didownload. Filter pencarian dan status yang aktif tetap diterapkan."
+          idPrefix={`payroll-${exportFormat}`}
+        />
+      )}
 
       <Dialog open={showBulkDeleteModal} onOpenChange={(open) => !isBulkDeleting && setShowBulkDeleteModal(open)}>
         <DialogContent showCloseButton={!isBulkDeleting} className="overflow-hidden rounded-2xl border-0 bg-white p-0 shadow-2xl dark:bg-slate-900 sm:max-w-md">

@@ -151,6 +151,7 @@ export default function PerformancePage() {
 
       const params = new URLSearchParams();
       params.set("limit", "999999");
+      params.set("activeEmployeesOnly", "true");
       if (debouncedSearchTerm) params.set("search", debouncedSearchTerm);
       if (filterPeriod !== "all") params.set("period", filterPeriod);
       if (filterScore !== "all") params.set("score", filterScore);
