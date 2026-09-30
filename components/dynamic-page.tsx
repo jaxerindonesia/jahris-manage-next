@@ -38,6 +38,9 @@ export type DynamicPageProps<T = object> = {
   onPageChange?: (page: number) => void;
   renderActions?: (row: T) => ReactNode;
   getRowId?: (row: T, index: number) => string;
+  selectedRowIds?: Set<string>;
+  onRowSelectionChange?: (rowId: string, selected: boolean) => void;
+  onSelectAllChange?: (selected: boolean) => void;
 };
 
 export default function DynamicPage<T extends object>({
@@ -55,9 +58,15 @@ export default function DynamicPage<T extends object>({
   onPageChange,
   renderActions,
   getRowId,
+  selectedRowIds,
+  onRowSelectionChange,
+  onSelectAllChange,
 }: DynamicPageProps<T>) {
   const hasPagination = totalPages > 1 && Boolean(onPageChange);
   const hasActions = Boolean(renderActions);
+  const hasSelection = Boolean(selectedRowIds && onRowSelectionChange);
+  const pageRowIds = items.map((row, index) => getRowId?.(row, index) ?? getFallbackRowId(row, index));
+  const allPageRowsSelected = pageRowIds.length > 0 && pageRowIds.every((id) => selectedRowIds?.has(id));
 
   return (
     <div className={cn("rounded-[16px] border border-slate-200 bg-white p-6 text-slate-900 shadow-sm dark:text-slate-100", DARK_GLASS_PANEL_CLASS)}>
@@ -68,6 +77,17 @@ export default function DynamicPage<T extends object>({
         <Table className={cn("min-w-full text-slate-900 dark:text-slate-200", tableClassName)}>
           <TableHeader>
             <TableRow className="border-slate-200 hover:bg-transparent dark:border-white/10">
+              {hasSelection ? (
+                <TableHead className="w-12 border-b border-slate-200 px-4 py-5 dark:border-white/10">
+                  <input
+                    type="checkbox"
+                    aria-label="Pilih semua payroll di halaman ini"
+                    checked={allPageRowsSelected}
+                    onChange={(event) => onSelectAllChange?.(event.target.checked)}
+                    className="h-4 w-4 cursor-pointer accent-blue-600"
+                  />
+                </TableHead>
+              ) : null}
               {columns.map((column) => (
                 <TableHead
                   key={column.key}
@@ -90,7 +110,7 @@ export default function DynamicPage<T extends object>({
           <TableBody>
             {items.length > 0 ? (
               items.map((row, index) => {
-                const rowId = getRowId?.(row, index) ?? getFallbackRowId(row, index);
+                const rowId = pageRowIds[index];
                 return (
                   <TableRow
                     key={rowId}
@@ -99,6 +119,17 @@ export default function DynamicPage<T extends object>({
                       bodyRowClassName,
                     )}
                   >
+                    {hasSelection ? (
+                      <TableCell className="w-12 border-b border-slate-200 px-4 py-5 dark:border-white/10">
+                        <input
+                          type="checkbox"
+                          aria-label={`Pilih baris ${index + 1}`}
+                          checked={selectedRowIds?.has(rowId) ?? false}
+                          onChange={(event) => onRowSelectionChange?.(rowId, event.target.checked)}
+                          className="h-4 w-4 cursor-pointer accent-blue-600"
+                        />
+                      </TableCell>
+                    ) : null}
                     {columns.map((column) => {
                       const value = row[column.key as keyof T];
                       return (
@@ -124,7 +155,7 @@ export default function DynamicPage<T extends object>({
             ) : (
               <TableRow className="border-slate-200 hover:bg-transparent dark:border-white/10">
                 <TableCell
-                  colSpan={columns.length + (hasActions ? 1 : 0)}
+                  colSpan={columns.length + (hasActions ? 1 : 0) + (hasSelection ? 1 : 0)}
                   className="border-b border-slate-200 py-10 text-center text-slate-400 dark:border-white/10 dark:text-slate-400"
                 >
                   {emptyMessage}

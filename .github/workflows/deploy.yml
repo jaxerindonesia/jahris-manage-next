@@ -44,6 +44,9 @@ jobs:
             echo "⚙️ Generate Prisma Client (SAFE)"
             npx prisma generate
 
+            echo "Apply pending database migrations"
+            npx prisma migrate deploy
+
             echo "🏗️ Build app"
             npm run build
 

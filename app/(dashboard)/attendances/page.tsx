@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { toast } from "sonner";
 import { AttendanceDto } from "@/lib/dto/attendance";
 import DetailData from "./components/detail-data";
@@ -65,6 +65,13 @@ type SavedGeoPoint = {
   timestamp: number;
 };
 
+type RecentGeoPosition = {
+  latitude: number;
+  longitude: number;
+  accuracy: number;
+  capturedAt: number;
+};
+
 function getLastBreakSession(record: AttendanceDto) {
   const sessions = record.breakSessions ?? [];
   return sessions.length > 0 ? sessions[sessions.length - 1] : null;
@@ -84,6 +91,7 @@ export default function Page() {
     faceDescriptor: number[] | null;
   }>({ id: "", role: "", avatarUrl: "", faceDescriptor: null });
   const [todayAttendance, setTodayAttendance] = useState<AttendanceDto | null>(null);
+  const recentGeoPositionRef = useRef<RecentGeoPosition | null>(null);
 
   const [showFilterPanel, setShowFilterPanel] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -157,12 +165,18 @@ export default function Page() {
         }
       }
 
-      await new Promise<GeolocationPosition>((resolve, reject) =>
+      const position = await new Promise<GeolocationPosition>((resolve, reject) =>
         navigator.geolocation.getCurrentPosition(resolve, reject, {
           ...LOCATION_OPTIONS,
           timeout: 5000,
         }),
       );
+      recentGeoPositionRef.current = {
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+        accuracy: position.coords.accuracy,
+        capturedAt: Date.now(),
+      };
 
       setLocationReady(true);
       setLocationWarning("");
@@ -219,12 +233,18 @@ export default function Page() {
         }
       }
 
-      await new Promise<GeolocationPosition>((resolve, reject) =>
+      const position = await new Promise<GeolocationPosition>((resolve, reject) =>
         navigator.geolocation.getCurrentPosition(resolve, reject, {
           ...LOCATION_OPTIONS,
           timeout: 8000,
         }),
       );
+      recentGeoPositionRef.current = {
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+        accuracy: position.coords.accuracy,
+        capturedAt: Date.now(),
+      };
 
       setLocationReady(true);
       setLocationWarning("");
@@ -494,6 +514,29 @@ export default function Page() {
     }
   }, [checkRole, isExporting, filterStatus, searchTerm, userData.id, userData.role]);
 
+  const getRecentLocation = useCallback(async () => {
+    const cached = recentGeoPositionRef.current;
+    if (cached && Date.now() - cached.capturedAt <= 45_000 && cached.accuracy <= 1500) {
+      return cached;
+    }
+
+    if (!navigator.geolocation) {
+      throw new Error("Perangkat ini tidak mendukung akses lokasi");
+    }
+
+    const position = await new Promise<GeolocationPosition>((resolve, reject) =>
+      navigator.geolocation.getCurrentPosition(resolve, reject, LOCATION_OPTIONS),
+    );
+    const freshPosition = {
+      latitude: position.coords.latitude,
+      longitude: position.coords.longitude,
+      accuracy: position.coords.accuracy,
+      capturedAt: Date.now(),
+    };
+    recentGeoPositionRef.current = freshPosition;
+    return freshPosition;
+  }, []);
+
   // ── Raw check-in / check-out (called after face verified) ──────────────
   const doCheckIn = useCallback(async (faceCaptureBase64: string) => {
     try {
@@ -513,11 +556,7 @@ export default function Page() {
         }
       }
 
-      const position = await new Promise<GeolocationPosition>((resolve, reject) =>
-        navigator.geolocation.getCurrentPosition(resolve, reject, LOCATION_OPTIONS),
-      );
-
-      const { latitude, longitude, accuracy } = position.coords;
+      const { latitude, longitude, accuracy } = await getRecentLocation();
       if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
         toast.error("Lokasi tidak valid. Pastikan GPS aktif lalu coba lagi.");
         return;
@@ -584,7 +623,7 @@ export default function Page() {
         message || "Gagal mengambil lokasi. Nyalakan lokasi/GPS lalu izinkan akses lokasi terlebih dahulu.",
       );
     }
-  }, [userData, fetchAttendance]);
+  }, [userData, fetchAttendance, getRecentLocation]);
 
   const doCheckOut = useCallback(async (faceCaptureBase64: string) => {
     try {
@@ -604,11 +643,7 @@ export default function Page() {
         }
       }
 
-      const position = await new Promise<GeolocationPosition>((resolve, reject) =>
-        navigator.geolocation.getCurrentPosition(resolve, reject, LOCATION_OPTIONS),
-      );
-
-      const { latitude, longitude, accuracy } = position.coords;
+      const { latitude, longitude, accuracy } = await getRecentLocation();
       if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
         toast.error("Lokasi tidak valid. Pastikan GPS aktif lalu coba lagi.");
         return;
@@ -675,18 +710,14 @@ export default function Page() {
         message || "Gagal mengambil lokasi. Nyalakan lokasi/GPS lalu izinkan akses lokasi terlebih dahulu.",
       );
     }
-  }, [userData, fetchAttendance]);
+  }, [userData, fetchAttendance, getRecentLocation]);
 
   const getBreakLocation = useCallback(async () => {
     if (!navigator.geolocation) {
       throw new Error("Perangkat ini tidak mendukung akses lokasi");
     }
 
-    const position = await new Promise<GeolocationPosition>((resolve, reject) =>
-      navigator.geolocation.getCurrentPosition(resolve, reject, LOCATION_OPTIONS),
-    );
-
-    const { latitude, longitude, accuracy } = position.coords;
+    const { latitude, longitude, accuracy } = await getRecentLocation();
     if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
       throw new Error("Lokasi tidak valid. Pastikan GPS aktif lalu coba lagi.");
     }
@@ -695,7 +726,7 @@ export default function Page() {
     }
 
     return { latitude, longitude, accuracy };
-  }, []);
+  }, [getRecentLocation]);
 
   const doBreakCheckIn = useCallback(async (faceCaptureBase64?: string | null) => {
     try {
@@ -753,20 +784,20 @@ export default function Page() {
 
   // ── Open face-recognition modal first ──────────────────────────────────
   const handleCheckIn = useCallback(async () => {
-    const canProceed =
-      locationReady || isIOSBrowser || (await ensureLocationAccess());
+    // Cache a fresh GPS reading before opening the camera. After the face scan
+    // succeeds, the attendance request can be sent without a second GPS wait.
+    const canProceed = await ensureLocationAccess();
     if (!canProceed) return;
     setFaceModalMode("check-in");
     setIsFaceModalOpen(true);
-  }, [ensureLocationAccess, isIOSBrowser, locationReady]);
+  }, [ensureLocationAccess]);
 
   const handleCheckOut = useCallback(async () => {
-    const canProceed =
-      locationReady || isIOSBrowser || (await ensureLocationAccess());
+    const canProceed = await ensureLocationAccess();
     if (!canProceed) return;
     setFaceModalMode("check-out");
     setIsFaceModalOpen(true);
-  }, [ensureLocationAccess, isIOSBrowser, locationReady]);
+  }, [ensureLocationAccess]);
 
   const handleBreakCheckIn = useCallback(() => {
     if (attendanceConfig.breakFaceCaptureEnabled) {
