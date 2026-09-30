@@ -175,6 +175,7 @@ export default function Page() {
 
       const params = new URLSearchParams();
       params.set("limit", "999999");
+      params.set("activeEmployeesOnly", "true");
       if (debouncedSearchTerm) params.set("search", debouncedSearchTerm);
       if (filterCategory !== "all") params.set("category", filterCategory);
       if (filterStatus !== "all") params.set("status", filterStatus);

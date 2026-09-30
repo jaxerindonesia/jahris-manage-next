@@ -59,6 +59,10 @@ interface HeaderToolbarProps {
         setSearchTerm: React.Dispatch<React.SetStateAction<string>>;
         status: string;
         setStatus: React.Dispatch<React.SetStateAction<string>>;
+        startDate: string;
+        setStartDate: React.Dispatch<React.SetStateAction<string>>;
+        endDate: string;
+        setEndDate: React.Dispatch<React.SetStateAction<string>>;
     };
 }
 
@@ -311,7 +315,7 @@ export const headerToolbar = ({ actions, overtime, filters }: HeaderToolbarProps
                     )}
                 </div>
 
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
                     <div>
                         <Label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">Cari</Label>
                         <Input
@@ -337,6 +341,24 @@ export const headerToolbar = ({ actions, overtime, filters }: HeaderToolbarProps
                                 <SelectItem value="REJECTED">Ditolak</SelectItem>
                             </SelectContent>
                         </Select>
+                    </div>
+                    <div>
+                        <Label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">Tanggal Mulai</Label>
+                        <Input
+                            type="date"
+                            value={filters.startDate}
+                            max={filters.endDate || undefined}
+                            onChange={(e) => filters.setStartDate(e.target.value)}
+                        />
+                    </div>
+                    <div>
+                        <Label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">Tanggal Selesai</Label>
+                        <Input
+                            type="date"
+                            value={filters.endDate}
+                            min={filters.startDate || undefined}
+                            onChange={(e) => filters.setEndDate(e.target.value)}
+                        />
                     </div>
                 </div>
             </div>

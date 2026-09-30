@@ -23,6 +23,7 @@ export async function GET(req: NextRequest) {
     const search = searchParams.get("search") || "";
     const status = searchParams.get("status") || "";
     const submissionTypeId = searchParams.get("submissionTypeId") || "";
+    const activeEmployeesOnly = searchParams.get("activeEmployeesOnly") === "true";
 
     const where: Prisma.SubmissionWhereInput = {};
     const scopedTenantId = ensureTenantScope(auth.user);
@@ -38,8 +39,11 @@ export async function GET(req: NextRequest) {
       ];
     }
 
+    if (activeEmployeesOnly) where.user = { status: "active" };
+
     if (search) {
       where.user = {
+        ...(activeEmployeesOnly ? { status: "active" } : {}),
         name: { contains: search, mode: "insensitive" },
       };
     }
