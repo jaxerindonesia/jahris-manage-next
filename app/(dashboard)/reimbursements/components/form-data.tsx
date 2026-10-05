@@ -50,7 +50,7 @@ function ReimbursementFormContent({ initialData, onClose, onSuccess }: {
     accountNumber: initialData?.accountNumber || "",
     description: initialData?.description || "",
     details: initialData ? getReimbursementDetails(initialData).map((detail, index) => ({
-      ...detail, key: detail.id || `existing-${index}`, date: formatDateInputValue(detail.date), receiptUrls: getReceiptUrls(detail), files: [],
+      ...detail, description: detail.description || "", key: detail.id || `existing-${index}`, date: formatDateInputValue(detail.date), receiptUrls: getReceiptUrls(detail), files: [],
     })) : [emptyDetail()],
   }));
   const total = Math.round(form.details.reduce((sum, detail) => sum + detail.amount, 0) * 100) / 100;

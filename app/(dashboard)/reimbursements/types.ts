@@ -1,11 +1,11 @@
 import type { ReimbursementDetailDto } from "@/lib/dto/reimbursement";
 
-export interface ReimbursementDetailForm extends ReimbursementDetailDto {
+export type ReimbursementDetailForm = Omit<ReimbursementDetailDto, "description"> & {
   key: string;
   description: string;
   files: File[];
   receiptUrls: string[];
-}
+};
 
 export interface ReimbursementForm {
   id?: string | null;
