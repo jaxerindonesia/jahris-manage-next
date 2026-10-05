@@ -2,6 +2,7 @@ import type { ReimbursementDetailDto } from "@/lib/dto/reimbursement";
 
 export interface ReimbursementDetailForm extends ReimbursementDetailDto {
   key: string;
+  description: string;
   files: File[];
   receiptUrls: string[];
 }

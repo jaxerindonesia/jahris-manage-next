@@ -18,7 +18,7 @@ import type { ReimbursementDetailForm, ReimbursementForm } from "../types";
 import ExpenseRow from "./expense-row";
 
 function emptyDetail(): ReimbursementDetailForm {
-  return { key: `${Date.now()}-${Math.random()}`, category: "", amount: 0, date: "", receiptUrls: [], files: [] };
+  return { key: `${Date.now()}-${Math.random()}`, category: "", description: "", amount: 0, date: "", receiptUrls: [], files: [] };
 }
 
 export default function ReimbursementFormData({ isOpen, initialData, onClose, onSuccess }: {

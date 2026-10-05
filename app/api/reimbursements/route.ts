@@ -122,11 +122,19 @@ export async function POST(req: NextRequest) {
     });
     return NextResponse.json({ message: "Reimbursement berhasil dibuat", data: reimbursement }, { status: 201 });
   } catch (error) {
-    await cleanupReimbursementReceipts(uploadedUrls);
+    try {
+      await cleanupReimbursementReceipts(uploadedUrls);
+    } catch (cleanupError) {
+      console.error("Failed to clean up reimbursement receipts:", cleanupError);
+    }
     if (error instanceof ReimbursementInputError) {
       return NextResponse.json({ message: error.message }, { status: 400 });
     }
     console.error(error);
-    return NextResponse.json({ message: "Failed to create reimbursement" }, { status: 500 });
+    const detail = error instanceof Error ? error.message : "Unknown server error";
+    return NextResponse.json({
+      message: "Failed to create reimbursement",
+      ...(process.env.NODE_ENV !== "production" ? { detail } : {}),
+    }, { status: 500 });
   }
 }

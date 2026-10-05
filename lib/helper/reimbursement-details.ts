@@ -7,7 +7,7 @@ import { REIMBURSEMENT_CATEGORIES, getReceiptUrls } from "@/lib/helper/reimburse
 export class ReimbursementInputError extends Error {}
 
 type ExistingDetail = { id?: string; receiptUrl: string | null; receiptUrls?: string[] };
-type DetailInput = { id?: string; category: string; amount: number; date: Date; receiptUrl: string | null; receiptUrls: string[]; position: number };
+type DetailInput = { id?: string; category: string; description: string; amount: number; date: Date; receiptUrl: string | null; receiptUrls: string[]; position: number };
 
 export async function prepareReimbursementDetails(
   form: FormData, tenantId: string | null, uploadedUrls: string[], existing: ExistingDetail[] = [],
@@ -23,6 +23,7 @@ export async function prepareReimbursementDetails(
     if (!row || typeof row !== "object") throw new ReimbursementInputError("Rincian pengeluaran tidak valid");
     const item = row as Record<string, unknown>;
     const category = typeof item.category === "string" ? item.category.trim() : "";
+    const description = typeof item.description === "string" ? item.description.trim().slice(0, 2000) : "";
     const amount = item.amount;
     const dateText = typeof item.date === "string" ? item.date : "";
     const date = new Date(`${dateText}T00:00:00.000Z`);
@@ -50,7 +51,7 @@ export async function prepareReimbursementDetails(
       throw new ReimbursementInputError("Bukti pembayaran tidak sesuai dengan rincian klaim");
     }
     const urls = [...new Set(receiptUrls)] as string[];
-    return { category, amount, date, receiptUrl: urls[0] ?? null, receiptUrls: urls, position };
+    return { category, description, amount, date, receiptUrl: urls[0] ?? null, receiptUrls: urls, position };
   });
   const amount = Math.round(details.reduce((sum, detail) => sum + detail.amount, 0) * 100) / 100;
   if (!Number.isFinite(amount) || amount > Number.MAX_SAFE_INTEGER / 100) {

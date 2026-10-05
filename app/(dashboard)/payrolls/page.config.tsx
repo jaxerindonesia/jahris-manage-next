@@ -87,6 +87,12 @@ export const columnFormats: DefaultColumnFormat<PayrollDto>[] = [
     formatter: (_value, row) => `${months.find((m) => m.value === row.month)?.label ?? row.month} ${row.year}`,
   },
   {
+    key: "branch",
+    title: "Cabang",
+    textClassName: "text-slate-700 dark:text-slate-200",
+    formatter: (_value, row) => row.user?.branch?.name ?? "-",
+  },
+  {
     key: "referenceNumber",
     title: "Nomor Referensi",
     textClassName: "font-medium text-slate-700 dark:text-slate-200",

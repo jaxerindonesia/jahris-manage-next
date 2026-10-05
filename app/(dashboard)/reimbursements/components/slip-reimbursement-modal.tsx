@@ -460,6 +460,7 @@ function SlipContent({
             <thead>
               <tr className="border-b text-left text-xs text-gray-500">
                 <th className="py-2 pr-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Kategori</th>
+                <th className="py-2 pr-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Keterangan</th>
                 <th className="py-2 pr-3 text-xs font-semibold uppercase tracking-wider text-gray-500">Tanggal</th>
                 <th className="right py-2 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">Nominal</th>
               </tr>
@@ -468,6 +469,7 @@ function SlipContent({
               {details.map((detail, i) => (
                 <tr key={detail.id || i} className="border-b border-gray-100">
                   <td className="py-3 pr-3 text-sm">{detail.category}</td>
+                  <td className="py-3 pr-3 text-sm text-gray-600">{detail.description || "-"}</td>
                   <td className="py-3 pr-3 text-sm">{formatDateId(detail.date)}</td>
                   <td className="bold right py-3 text-right text-sm tabular-nums font-semibold">{formatCurrency(detail.amount)}</td>
                 </tr>

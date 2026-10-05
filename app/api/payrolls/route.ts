@@ -105,7 +105,7 @@ export async function GET(req: NextRequest) {
         take: limit,
         include: {
           user: {
-            select: { id: true, name: true, position: true, department: true },
+            select: { id: true, name: true, position: true, department: true, branch: { select: { id: true, name: true } } },
           },
           componentValues: true,
         },
@@ -147,6 +147,7 @@ export async function POST(req: NextRequest) {
       startDate,
       endDate,
       allEmployees,
+      branchId,
     } = body;
 
     if ((!userId && !allEmployees) || !month || !year || !status) {
@@ -173,10 +174,20 @@ export async function POST(req: NextRequest) {
 
     const scopedTenantId = ensureTenantScope(auth.user);
     if (allEmployees) {
+      const selectedBranchId = typeof branchId === "string" && branchId.trim() ? branchId.trim() : null;
+      if (selectedBranchId) {
+        const branch = await prisma.branch.findFirst({
+          where: { id: selectedBranchId, ...(scopedTenantId ? { tenantId: scopedTenantId } : {}) },
+          select: { id: true },
+        });
+        if (!branch) return NextResponse.json({ message: "Cabang tidak ditemukan atau tidak memiliki akses" }, { status: 404 });
+      }
       const employees = await prisma.user.findMany({
         where: {
           deletedAt: null,
+          status: "active",
           ...(scopedTenantId ? { tenantId: scopedTenantId } : {}),
+          ...(selectedBranchId ? { branchId: selectedBranchId } : {}),
           role: { name: { equals: "Karyawan", mode: "insensitive" } },
         },
         select: { id: true, name: true },
