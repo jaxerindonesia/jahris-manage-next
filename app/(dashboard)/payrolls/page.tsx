@@ -24,6 +24,7 @@ import ExportPeriodDialog, { type ExportPeriod } from "@/components/export-perio
 export default function Page() {
   const { checkRole } = usePermission();
   const [data, setData] = useState<PayrollDto[]>([]);
+  const [payrollSummary, setPayrollSummary] = useState({ paid: 0, pending: 0, total: 0 });
   const [total, setTotal] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(false);
@@ -58,6 +59,21 @@ export default function Page() {
   const [bulkDeleteCount, setBulkDeleteCount] = useState(0);
 
   const currentYear = new Date().getFullYear();
+  const fetchPayrollSummary = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/payrolls/summary?year=${currentYear}`);
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.message || "Gagal memuat ringkasan payroll");
+      setPayrollSummary({
+        paid: Number(json.data?.paid) || 0,
+        pending: Number(json.data?.pending) || 0,
+        total: Number(json.data?.total) || 0,
+      });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Gagal memuat ringkasan payroll");
+    }
+  }, [currentYear]);
+
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / ITEMS_PER_PAGE)), [total]);
   const pendingSelectedIds = useMemo(
     () => data.flatMap((item) =>
@@ -81,34 +97,30 @@ export default function Page() {
   }, [searchTerm, filterPeriodMode, filterMonth, filterYear, filterStartDate, filterEndDate, filterStatus]);
 
   const summaryCards = useMemo(() => {
-    const summaryPaid = data.filter((p) => p.status === "PAID").reduce((sum, p) => sum + p.totalSalary, 0);
-    const summaryPending = data.filter((p) => p.status === "PENDING").reduce((sum, p) => sum + p.totalSalary, 0);
-    const summaryTotal = data.reduce((sum, p) => sum + p.totalSalary, 0);
-
     return [
       {
         label: "Gaji Dibayarkan",
-        value: summaryPaid,
+        value: payrollSummary.paid,
         subtitle: `Tahun ${currentYear}`,
         tone: "emerald",
         icon: CheckCircle,
       },
       {
         label: "Gaji Pending",
-        value: summaryPending,
+        value: payrollSummary.pending,
         subtitle: `Tahun ${currentYear}`,
         tone: "amber",
         icon: Clock,
       },
       {
         label: "Total Gaji",
-        value: summaryTotal,
+        value: payrollSummary.total,
         subtitle: `Tahun ${currentYear}`,
         tone: "violet",
         icon: CheckCircle,
       },
     ];
-  }, [data, currentYear]);
+  }, [payrollSummary, currentYear]);
 
   const clearFilters = useCallback(() => {
     setFilterPeriodMode("month");
@@ -144,7 +156,7 @@ export default function Page() {
       if (!res.ok) throw new Error(json.message || "Gaji berhasil dihapus");
 
       toast.success("Gaji berhasil dihapus!");
-      fetchData();
+      await Promise.all([fetchData(), fetchPayrollSummary()]);
     } catch (error) {
       toast.error(`Gagal menghapus gaji: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally {
@@ -169,6 +181,7 @@ export default function Page() {
       const deletedCount = Number(json.deletedCount || ids.length);
       setData((current) => current.filter((item) => !item.id || !selectedIds.has(item.id)));
       setTotal((current) => Math.max(0, current - deletedCount));
+      await fetchPayrollSummary();
       setSelectedIds(new Set());
       setBulkDeletePhase("success");
       await new Promise((resolve) => window.setTimeout(resolve, 1400));
@@ -179,7 +192,7 @@ export default function Page() {
     } finally {
       setIsBulkDeleting(false);
     }
-  }, [selectedIds]);
+  }, [fetchPayrollSummary, selectedIds]);
 
   const onBulkMarkPaid = useCallback(async () => {
     if (!pendingSelectedIds.length || paymentRequestPending.current) return;
@@ -199,6 +212,7 @@ export default function Page() {
       setData((current) => current.map((item) =>
         item.id && updatedIds.has(item.id) ? { ...item, status: "PAID", paidAt } : item,
       ));
+      await fetchPayrollSummary();
       setSelectedIds(new Set());
       setBulkPaidCount(updatedIds.size);
       setBulkPaidPhase("success");
@@ -208,7 +222,7 @@ export default function Page() {
     } finally {
       paymentRequestPending.current = false;
     }
-  }, [pendingSelectedIds]);
+  }, [fetchPayrollSummary, pendingSelectedIds]);
 
   useEffect(() => {
     if (!showBulkPaidModal || bulkPaidPhase !== "success") return;
@@ -245,6 +259,7 @@ export default function Page() {
 
       const rows = allData.map((emp) => ({
         "Nama Karyawan": emp.user?.name ?? "-",
+        Cabang: emp.user?.branch?.name ?? "-",
         "Nomor Referensi": emp.referenceNumber ?? "-",
         Periode: `${months.find((m) => m.value === emp.month)?.label ?? emp.month} ${emp.year}`,
         "Gaji Pokok": emp.basicSalary,
@@ -421,6 +436,10 @@ export default function Page() {
   }, [fetchData]);
 
   useEffect(() => {
+    fetchPayrollSummary();
+  }, [fetchPayrollSummary]);
+
+  useEffect(() => {
     const timeoutId = window.setTimeout(() => {
       setDebouncedSearchTerm(searchTerm.trim());
     }, 400);
@@ -502,6 +521,7 @@ export default function Page() {
           onOpenChange={(open) => !open && setExportFormat(null)}
           onConfirm={exportFormat === "excel" ? onExport : onPrintAll}
           title={exportFormat === "excel" ? "Download Payroll Excel" : "Download Payroll PDF"}
+          submitLabel={exportFormat === "excel" ? "Download Excel" : "Download PDF"}
           description="Pilih rentang tanggal payroll yang akan didownload. Filter pencarian dan status yang aktif tetap diterapkan."
           idPrefix={`payroll-${exportFormat}`}
         />
@@ -562,7 +582,9 @@ export default function Page() {
           setShowFormModal(false);
           setDetailItem(undefined);
         }}
-        onSuccess={fetchData}
+        onSuccess={() => {
+          void Promise.all([fetchData(), fetchPayrollSummary()]);
+        }}
       />
 
       {/* ─── Detail Slip Modal ─── */}

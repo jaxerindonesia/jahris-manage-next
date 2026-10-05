@@ -219,6 +219,7 @@ export default function Page() {
         "Judul Klaim": claim.title,
         "Rincian": index + 1,
         "Kategori": detail.category,
+        "Keterangan": detail.description || "-",
         "Tanggal Pengeluaran": formatDateId(detail.date),
         "Nominal": detail.amount,
         "Bukti": getReceiptUrls(detail).join("\n") || "-",

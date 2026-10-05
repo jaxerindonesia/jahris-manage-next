@@ -1,6 +1,7 @@
 export interface ReimbursementDetailDto {
     id?: string;
     category: string;
+    description?: string | null;
     amount: number;
     date: string;
     receiptUrl?: string | null;

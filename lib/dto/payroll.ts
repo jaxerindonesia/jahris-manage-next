@@ -30,5 +30,6 @@ export interface PayrollDto {
         name: string;
         position?: string | null;
         department?: string | { name?: string | null } | null;
+        branch?: { id?: string; name?: string | null } | null;
     } | null;
 }

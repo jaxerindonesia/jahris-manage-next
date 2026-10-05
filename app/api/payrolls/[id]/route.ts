@@ -69,7 +69,7 @@ export async function GET(_: Request, { params }: Params) {
           orderBy: { createdAt: "asc" },
         },
         user: {
-          select: { id: true, name: true, position: true, department: true },
+          select: { id: true, name: true, position: true, department: true, branch: { select: { id: true, name: true } } },
         },
       },
     });

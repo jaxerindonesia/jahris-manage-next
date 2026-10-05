@@ -8,7 +8,7 @@ export async function saveReimbursement(form: ReimbursementForm) {
   }
   body.set("details", JSON.stringify(form.details.map((detail, index) => {
     detail.files.forEach((file) => body.append(`receipt-${index}`, file));
-    return { id: detail.id, category: detail.category, amount: detail.amount,
+    return { id: detail.id, category: detail.category, description: detail.description, amount: detail.amount,
       date: detail.date, receiptUrls: detail.receiptUrls };
   })));
   const response = await fetch(form.id ? `/api/reimbursements/${form.id}` : "/api/reimbursements", {

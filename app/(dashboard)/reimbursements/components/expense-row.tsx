@@ -4,6 +4,7 @@ import { ExternalLink, FileText, Trash2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -67,6 +68,12 @@ export default function ExpenseRow({ detail, index, disabled, canRemove, onChang
           <Label htmlFor={`${prefix}-date`}>Tanggal Pengeluaran</Label>
           <Input id={`${prefix}-date`} type="date" value={detail.date} required onChange={(event) => onChange({ date: event.target.value })} />
         </div>
+      </div>
+      <div className="mt-4 grid gap-2">
+        <Label htmlFor={`${prefix}-description`}>Keterangan Rincian (opsional)</Label>
+        <Textarea id={`${prefix}-description`} value={detail.description || ""} maxLength={2000} rows={2}
+          placeholder="Jelaskan keperluan pengeluaran ini" disabled={disabled}
+          onChange={(event) => onChange({ description: event.target.value })} />
       </div>
       <div className="mt-4 grid gap-2">
         <Label htmlFor={`${prefix}-receipt`}>Bukti Pengeluaran</Label>
