@@ -82,7 +82,7 @@ export const columnFormats: DefaultColumnFormat<PayrollDto>[] = [
   },
   {
     key: "period",
-    title: "Periode",
+    title: "Bulan",
     textClassName: "text-slate-700 dark:text-slate-200",
     formatter: (_value, row) => `${months.find((m) => m.value === row.month)?.label ?? row.month} ${row.year}`,
   },

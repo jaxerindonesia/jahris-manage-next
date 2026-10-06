@@ -230,7 +230,8 @@ export default function Page() {
     return () => window.clearTimeout(timeout);
   }, [showBulkPaidModal, bulkPaidPhase]);
 
-  const onExport = useCallback(async ({ startDate, endDate }: ExportPeriod) => {
+  const onExport = useCallback(async (period: ExportPeriod) => {
+    const { startDate, endDate } = period;
     if (!startDate || !endDate || startDate > endDate) {
       toast.error("Pilih rentang tanggal yang valid");
       return;
@@ -254,6 +255,12 @@ export default function Page() {
 
       const json = await res.json();
       const allData: PayrollDto[] = json.data || [];
+      const exportMonth = period.mode === "month"
+        ? `${months.find((item) => item.value === period.month)?.label ?? period.month} ${period.year}`
+        : (() => {
+            const [rangeYear, rangeMonth] = startDate.split("-").map(Number);
+            return `${months.find((item) => item.value === rangeMonth)?.label ?? rangeMonth} ${rangeYear}`;
+          })();
 
       const XLSX = await import("xlsx");
 
@@ -261,7 +268,7 @@ export default function Page() {
         "Nama Karyawan": emp.user?.name ?? "-",
         Cabang: emp.user?.branch?.name ?? "-",
         "Nomor Referensi": emp.referenceNumber ?? "-",
-        Periode: `${months.find((m) => m.value === emp.month)?.label ?? emp.month} ${emp.year}`,
+        Periode: exportMonth,
         "Gaji Pokok": emp.basicSalary,
         Tunjangan: emp.allowances,
         Potongan: emp.deductions,
@@ -287,7 +294,7 @@ export default function Page() {
     }
   }, [debouncedSearchTerm, filterStatus]);
 
-  const onPrintAll = useCallback(async ({ startDate, endDate }: ExportPeriod) => {
+  const onPrintAll = useCallback(async ({ startDate, endDate, label }: ExportPeriod) => {
     if (!startDate || !endDate || startDate > endDate) {
       toast.error("Pilih rentang tanggal yang valid");
       return;
