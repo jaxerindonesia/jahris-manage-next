@@ -21,6 +21,19 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import ExportPeriodDialog, { type ExportPeriod } from "@/components/export-period-dialog";
 
+function buildPayrollExportParams(
+  period: Pick<ExportPeriod, "startDate" | "endDate">,
+  search: string,
+  status: string,
+) {
+  const params = new URLSearchParams({ page: "1", limit: "999999", activeEmployeesOnly: "true" });
+  if (search) params.set("search", search);
+  params.set("startDate", period.startDate);
+  params.set("endDate", period.endDate);
+  if (status !== "all") params.set("status", status);
+  return params;
+}
+
 export default function Page() {
   const { checkRole } = usePermission();
   const [data, setData] = useState<PayrollDto[]>([]);
@@ -238,13 +251,7 @@ export default function Page() {
     }
     setIsExporting(true);
     try {
-      const params = new URLSearchParams();
-      params.set("limit", "999999");
-      params.set("activeEmployeesOnly", "true");
-      if (debouncedSearchTerm) params.set("search", debouncedSearchTerm);
-      params.set("startDate", startDate);
-      params.set("endDate", endDate);
-      if (filterStatus !== "all") params.set("status", filterStatus);
+      const params = buildPayrollExportParams(period, debouncedSearchTerm, filterStatus);
 
       const res = await fetch(`/api/payrolls?${params.toString()}`);
       if (!res.ok) {
@@ -255,20 +262,17 @@ export default function Page() {
 
       const json = await res.json();
       const allData: PayrollDto[] = json.data || [];
-      const exportMonth = period.mode === "month"
-        ? `${months.find((item) => item.value === period.month)?.label ?? period.month} ${period.year}`
-        : (() => {
-            const [rangeYear, rangeMonth] = startDate.split("-").map(Number);
-            return `${months.find((item) => item.value === rangeMonth)?.label ?? rangeMonth} ${rangeYear}`;
-          })();
-
+      if (!allData.length) throw new Error("Tidak ada payroll sesuai filter yang dipilih");
       const XLSX = await import("xlsx");
 
       const rows = allData.map((emp) => ({
         "Nama Karyawan": emp.user?.name ?? "-",
         Cabang: emp.user?.branch?.name ?? "-",
         "Nomor Referensi": emp.referenceNumber ?? "-",
-        Periode: exportMonth,
+        Bulan: emp.periodStartDate && emp.periodEndDate ? "-" : `${months.find((item) => item.value === emp.month)?.label ?? emp.month} ${emp.year}`,
+        Periode: emp.periodStartDate && emp.periodEndDate
+          ? `${new Date(emp.periodStartDate).toLocaleDateString("id-ID")} s/d ${new Date(emp.periodEndDate).toLocaleDateString("id-ID")}`
+          : "-",
         "Gaji Pokok": emp.basicSalary,
         Tunjangan: emp.allowances,
         Potongan: emp.deductions,
@@ -294,7 +298,7 @@ export default function Page() {
     }
   }, [debouncedSearchTerm, filterStatus]);
 
-  const onPrintAll = useCallback(async ({ startDate, endDate, label }: ExportPeriod) => {
+  const onPrintAll = useCallback(async ({ startDate, endDate }: ExportPeriod) => {
     if (!startDate || !endDate || startDate > endDate) {
       toast.error("Pilih rentang tanggal yang valid");
       return;
@@ -307,11 +311,7 @@ export default function Page() {
     try {
       setIsExporting(true);
       printWindow.document.write("<p style='font-family:Arial;padding:24px'>Menyiapkan PDF seluruh slip payroll...</p>");
-      const params = new URLSearchParams({ page: "1", limit: "999999", activeEmployeesOnly: "true" });
-      if (debouncedSearchTerm) params.set("search", debouncedSearchTerm);
-      params.set("startDate", startDate);
-      params.set("endDate", endDate);
-      if (filterStatus !== "all") params.set("status", filterStatus);
+      const params = buildPayrollExportParams({ startDate, endDate }, debouncedSearchTerm, filterStatus);
       const res = await fetch(`/api/payrolls?${params.toString()}`);
       if (!res.ok) throw new Error(await parseApiError(res, "Gagal mengambil seluruh payroll"));
       const json = await res.json();

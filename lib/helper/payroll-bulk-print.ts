@@ -12,7 +12,10 @@ function currency(value: number) {
 export function buildPayrollBulkPrintHtml(payrolls: PayrollDto[], brand: { companyName?: string; logoUrl?: string }) {
   const printedAt = new Date().toLocaleString("id-ID", { day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
   const pages = payrolls.map((payroll) => {
-    const period = `${months.find((month) => month.value === payroll.month)?.label ?? payroll.month} ${payroll.year}`;
+    const isRangePeriod = Boolean(payroll.periodStartDate && payroll.periodEndDate);
+    const period = isRangePeriod
+      ? `${new Date(payroll.periodStartDate!).toLocaleDateString("id-ID")} s/d ${new Date(payroll.periodEndDate!).toLocaleDateString("id-ID")}`
+      : `${months.find((month) => month.value === payroll.month)?.label ?? payroll.month} ${payroll.year}`;
     const earnings = (payroll.componentValues ?? []).filter((item) => item.typeSnapshot === "EARNING");
     const deductions = (payroll.componentValues ?? []).filter((item) => item.typeSnapshot === "DEDUCTION");
     const componentRows = [
@@ -21,7 +24,7 @@ export function buildPayrollBulkPrintHtml(payrolls: PayrollDto[], brand: { compa
     ].join("");
     return `<section class="payroll-page">
       <header><div class="brand">${brand.logoUrl ? `<img src="${escapeHtml(brand.logoUrl)}" alt="Logo" />` : '<div class="brand-mark">HR</div>'}<div><strong>${escapeHtml(brand.companyName || "JAXER GRUP INDONESIA")}</strong><span>Human Resource Management</span></div></div><div class="doc"><strong>SLIP GAJI</strong><span>${escapeHtml(period)}</span></div></header>
-      <div class="profile"><h1>${escapeHtml(payroll.user?.name)}</h1><p>${escapeHtml(payroll.user?.position || "Karyawan")} · ${escapeHtml(typeof payroll.user?.department === "string" ? payroll.user.department : payroll.user?.department?.name || "-")} · Cabang ${escapeHtml(payroll.user?.branch?.name || "-")}</p><div class="meta"><div><label>Nomor Referensi</label><b>${escapeHtml(payroll.referenceNumber)}</b></div><div><label>Bulan</label><b>${escapeHtml(period)}</b></div><div><label>Status</label><b class="status ${payroll.status === "PAID" ? "paid" : "pending"}">${payroll.status === "PAID" ? "Dibayar" : "Pending"}</b></div></div></div>
+      <div class="profile"><h1>${escapeHtml(payroll.user?.name)}</h1><p>${escapeHtml(payroll.user?.position || "Karyawan")} · ${escapeHtml(typeof payroll.user?.department === "string" ? payroll.user.department : payroll.user?.department?.name || "-")} · Cabang ${escapeHtml(payroll.user?.branch?.name || "-")}</p><div class="meta"><div><label>Nomor Referensi</label><b>${escapeHtml(payroll.referenceNumber)}</b></div><div><label>Bulan</label><b>${escapeHtml(isRangePeriod ? "-" : period)}</b></div><div><label>Periode</label><b>${escapeHtml(isRangePeriod ? period : "-")}</b></div><div><label>Status</label><b class="status ${payroll.status === "PAID" ? "paid" : "pending"}">${payroll.status === "PAID" ? "Dibayar" : "Pending"}</b></div></div></div>
       <div class="summary"><div><label>Gaji Pokok</label><b>${escapeHtml(currency(payroll.basicSalary))}</b></div><div><label>Penghasilan Tambahan</label><b class="green">+ ${escapeHtml(currency(payroll.allowances))}</b></div><div><label>Total Potongan</label><b class="red">- ${escapeHtml(currency(payroll.deductions))}</b></div><div class="total"><label>Gaji Bersih</label><b>${escapeHtml(currency(payroll.totalSalary))}</b></div></div>
       <h2>Rincian Komponen Payroll</h2><table><thead><tr><th>Komponen</th><th>Jenis</th><th class="money">Nominal</th></tr></thead><tbody>${componentRows || '<tr><td colspan="3" class="empty">Tidak ada komponen tambahan atau potongan</td></tr>'}</tbody></table>
       <div class="attendance"><div><label>Hari Kerja Dibayar</label><b>${payroll.paidAttendanceDays ?? 0}</b></div><div><label>Jumlah Terlambat</label><b>${payroll.lateAttendanceDays ?? 0}</b></div><div><label>Potongan Terlambat</label><b>${escapeHtml(currency(payroll.lateDeductionAmount || 0))}</b></div><div><label>Potongan Tidak Hadir</label><b>${escapeHtml(currency(payroll.absentDeductionAmount || 0))}</b></div></div>

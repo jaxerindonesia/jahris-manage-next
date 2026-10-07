@@ -46,7 +46,10 @@ export default function SlipGajiModal({
     });
 
     const monthName = months.find((m) => m.value === detailItem?.month)?.label ?? "-";
-    const periodLabel = `${monthName} ${detailItem?.year}`;
+    const isRangePeriod = Boolean(detailItem?.periodStartDate && detailItem?.periodEndDate);
+    const periodLabel = isRangePeriod
+        ? `${new Date(detailItem!.periodStartDate!).toLocaleDateString("id-ID")} s/d ${new Date(detailItem!.periodEndDate!).toLocaleDateString("id-ID")}`
+        : `${monthName} ${detailItem?.year}`;
 
     if (!isOpen) return null;
 
@@ -135,7 +138,7 @@ export default function SlipGajiModal({
                             Slip Gaji Karyawan
                         </h2>
                         <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-                            Periode: {periodLabel}
+                            Bulan: {isRangePeriod ? "-" : periodLabel} · Periode: {isRangePeriod ? periodLabel : "-"}
                         </p>
                     </div>
                     <div className="flex items-center gap-2">
