@@ -150,6 +150,13 @@ export async function POST(req: NextRequest) {
       branchId,
     } = body;
 
+    if ((startDate && !endDate) || (!startDate && endDate)) {
+      return NextResponse.json({ message: "Tanggal mulai dan selesai periode wajib diisi bersama" }, { status: 400 });
+    }
+    if (startDate && endDate && (Number.isNaN(Date.parse(startDate)) || Number.isNaN(Date.parse(endDate)) || startDate > endDate)) {
+      return NextResponse.json({ message: "Rentang tanggal payroll tidak valid" }, { status: 400 });
+    }
+
     if ((!userId && !allEmployees) || !month || !year || !status) {
       return NextResponse.json(
         { message: "All payroll fields are required fields" },
@@ -235,6 +242,8 @@ export async function POST(req: NextRequest) {
         userId,
         month: normalizedMonth,
         year: normalizedYear,
+        periodStartDate: startDate ? new Date(`${startDate}T00:00:00.000Z`) : null,
+        periodEndDate: endDate ? new Date(`${endDate}T00:00:00.000Z`) : null,
         tenantId: finalTenantId,
       },
     });
@@ -301,6 +310,8 @@ export async function POST(req: NextRequest) {
           userId,
           month: normalizedMonth,
           year: normalizedYear,
+          periodStartDate: startDate ? new Date(`${startDate}T00:00:00.000Z`) : null,
+          periodEndDate: endDate ? new Date(`${endDate}T00:00:00.000Z`) : null,
           basicSalary: normalizedBasicSalary,
           salaryType: salarySummary.salaryType,
           salaryRate: salarySummary.salaryRate,
@@ -347,7 +358,7 @@ export async function POST(req: NextRequest) {
       { status: 201 },
     );
   } catch (error) {
-    console.error(error);
+    console.error("[POST /api/payrolls] Failed to create payroll:", error);
     return NextResponse.json(
       { message: "Failed to create payroll" },
       { status: 500 },

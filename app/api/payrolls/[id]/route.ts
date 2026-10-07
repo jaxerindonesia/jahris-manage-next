@@ -129,6 +129,8 @@ export async function PUT(req: Request, { params }: Params) {
       userId: targetUserId,
       month: targetMonth,
       year: targetYear,
+      startDate: body.periodStartDate ? String(body.periodStartDate).slice(0, 10) : undefined,
+      endDate: body.periodEndDate ? String(body.periodEndDate).slice(0, 10) : undefined,
     });
     const basicSalary = salarySummary.basicSalary;
     const componentValues = normalizeComponentValues(body.componentValues, basicSalary);
@@ -137,6 +139,8 @@ export async function PUT(req: Request, { params }: Params) {
       userId: targetUserId,
       month: targetMonth,
       year: targetYear,
+      startDate: body.periodStartDate ? String(body.periodStartDate).slice(0, 10) : undefined,
+      endDate: body.periodEndDate ? String(body.periodEndDate).slice(0, 10) : undefined,
     });
     if (overtimeSummary.totalAmount > 0) {
       componentValues.push({
@@ -181,6 +185,8 @@ export async function PUT(req: Request, { params }: Params) {
 
     if (body.month !== undefined) updateData.month = targetMonth;
     if (body.year !== undefined) updateData.year = targetYear;
+    if (body.periodStartDate !== undefined) updateData.periodStartDate = body.periodStartDate ? new Date(`${String(body.periodStartDate).slice(0, 10)}T00:00:00.000Z`) : null;
+    if (body.periodEndDate !== undefined) updateData.periodEndDate = body.periodEndDate ? new Date(`${String(body.periodEndDate).slice(0, 10)}T00:00:00.000Z`) : null;
     if (body.userId !== undefined) updateData.userId = targetUserId;
     updateData.basicSalary = basicSalary;
     updateData.salaryType = salarySummary.salaryType;

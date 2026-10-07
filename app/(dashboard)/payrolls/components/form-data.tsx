@@ -307,6 +307,8 @@ export default function FormData({
           deductions: computedDeductions,
           startDate: periodMode === "range" ? rangeStartDate : undefined,
           endDate: periodMode === "range" ? rangeEndDate : undefined,
+          periodStartDate: periodMode === "range" ? rangeStartDate : null,
+          periodEndDate: periodMode === "range" ? rangeEndDate : null,
         }),
       });
 
@@ -340,6 +342,13 @@ export default function FormData({
 
     if (initialData) {
       setTargetMode("single");
+      const initialRangeStart = initialData.periodStartDate ? new Date(initialData.periodStartDate).toISOString().slice(0, 10) : null;
+      const initialRangeEnd = initialData.periodEndDate ? new Date(initialData.periodEndDate).toISOString().slice(0, 10) : null;
+      setPeriodMode(initialRangeStart && initialRangeEnd ? "range" : "month");
+      if (initialRangeStart && initialRangeEnd) {
+        setRangeStartDate(initialRangeStart);
+        setRangeEndDate(initialRangeEnd);
+      }
       const baseSalary = Number(initialData.basicSalary || 0);
       const sourceValues = (initialData.componentValues || []).filter(
         (item) =>
@@ -357,12 +366,15 @@ export default function FormData({
         userId: initialData.userId || initialData.user?.id || "",
         month: Number(initialData.month || createDefaultFormData().month),
         year: Number(initialData.year || createDefaultFormData().year),
+        startDate: initialRangeStart || undefined,
+        endDate: initialRangeEnd || undefined,
         sourceValues,
       });
       return;
     }
 
     const defaultData = createDefaultFormData();
+    setPeriodMode("month");
     setTargetMode("single");
     setOvertimeAmount(0);
     setLateDeductionAmount(0);
@@ -408,8 +420,8 @@ export default function FormData({
                     userId: val,
                     month: periodMode === "range" ? end.getMonth() + 1 : Number(formData.month || createDefaultFormData().month),
                     year: periodMode === "range" ? end.getFullYear() : Number(formData.year || createDefaultFormData().year),
-                    startDate: periodMode === "range" ? rangeStartDate : undefined,
-                    endDate: periodMode === "range" ? rangeEndDate : undefined,
+          startDate: periodMode === "range" ? rangeStartDate : undefined,
+          endDate: periodMode === "range" ? rangeEndDate : undefined,
                     sourceValues: formData.componentValues,
                   });
                 }}
@@ -616,7 +628,7 @@ export default function FormData({
                     </div>
                   </div>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Perhitungan kehadiran dan lembur dihitung berdasarkan rentang tanggal ini. Periode slip tercatat pada bulan {months.find(m => m.value === (new Date(rangeEndDate).getMonth() + 1))?.label} {new Date(rangeEndDate).getFullYear()}.
+                    Perhitungan kehadiran dan lembur dihitung berdasarkan rentang tanggal ini.
                   </p>
                 </div>
               )}

@@ -65,7 +65,14 @@ export async function createPayrollForUser(params: {
   creatorId: string;
 }) {
   const salary = await getPayrollSalarySummary(params);
-  const existing = await prisma.payroll.findFirst({ where: { userId: params.userId, month: params.month, year: params.year, tenantId: salary.tenantId } });
+  const existing = await prisma.payroll.findFirst({ where: {
+    userId: params.userId,
+    month: params.month,
+    year: params.year,
+    periodStartDate: params.startDate ? new Date(`${params.startDate}T00:00:00.000Z`) : null,
+    periodEndDate: params.endDate ? new Date(`${params.endDate}T00:00:00.000Z`) : null,
+    tenantId: salary.tenantId,
+  } });
   if (existing) return null;
 
   const values = params.componentValues
@@ -82,6 +89,8 @@ export async function createPayrollForUser(params: {
     await lockPayrollJournal(tx, salary.tenantId);
     const payroll = await tx.payroll.create({ data: {
       tenantId: salary.tenantId, userId: params.userId, month: params.month, year: params.year,
+      periodStartDate: params.startDate ? new Date(`${params.startDate}T00:00:00.000Z`) : null,
+      periodEndDate: params.endDate ? new Date(`${params.endDate}T00:00:00.000Z`) : null,
       basicSalary: salary.basicSalary, salaryType: salary.salaryType, salaryRate: salary.salaryRate,
       paidAttendanceDays: salary.paidAttendanceDays, lateDeductionRate: salary.lateDeductionRate,
       lateAttendanceDays: salary.lateAttendanceDays, lateDeductionAmount: salary.lateDeductionAmount,

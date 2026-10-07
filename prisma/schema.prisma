@@ -480,6 +480,8 @@ model Payroll {
   referenceNumber     String?                 @map("reference_number")
   month               Int
   year                Int
+  periodStartDate     DateTime?               @map("period_start_date") @db.Date
+  periodEndDate       DateTime?               @map("period_end_date") @db.Date
   basicSalary         Float                   @map("basic_salary")
   salaryType          String                  @default("monthly") @map("salary_type")
   salaryRate          Float                   @default(0) @map("salary_rate")
