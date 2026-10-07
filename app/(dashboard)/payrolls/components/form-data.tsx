@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import EmployeeSearchSelect from "@/components/employee-search-select";
+import type { BranchDto } from "@/lib/dto/branch";
 
 import { PayrollDto } from "@/lib/dto/payroll";
 import { useEffect, useRef, useState } from "react";
@@ -51,6 +52,8 @@ export default function FormData({
 }) {
   const [loading, setLoading] = useState(false);
   const [componentConfigs, setComponentConfigs] = useState<PayrollComponentConfigDto[]>([]);
+  const [branches, setBranches] = useState<BranchDto[]>([]);
+  const [branchId, setBranchId] = useState("all");
   const [overtimeAmount, setOvertimeAmount] = useState(0);
   const [lateDeductionAmount, setLateDeductionAmount] = useState(0);
   const [absentDeductionAmount, setAbsentDeductionAmount] = useState(0);
@@ -299,10 +302,13 @@ export default function FormData({
           ...formData,
           userId: targetMode === "all" ? "" : formData.userId,
           allEmployees: targetMode === "all",
+          branchId: targetMode === "all" && branchId !== "all" ? branchId : undefined,
           allowances: computedAllowances,
           deductions: computedDeductions,
           startDate: periodMode === "range" ? rangeStartDate : undefined,
           endDate: periodMode === "range" ? rangeEndDate : undefined,
+          periodStartDate: periodMode === "range" ? rangeStartDate : null,
+          periodEndDate: periodMode === "range" ? rangeEndDate : null,
         }),
       });
 
@@ -322,6 +328,13 @@ export default function FormData({
   useEffect(() => {
     if (!isOpen) return;
     fetchComponentConfigs();
+    fetch("/api/branches?page=1&limit=999999")
+      .then(async (res) => {
+        if (!res.ok) throw new Error(await parseApiError(res, "Gagal mengambil data cabang"));
+        return res.json();
+      })
+      .then((json) => setBranches((json.data || []).filter((branch: BranchDto) => branch.isActive)))
+      .catch((error) => toast.error(error instanceof Error ? error.message : "Gagal memuat data cabang"));
   }, [isOpen]);
 
   useEffect(() => {
@@ -329,6 +342,13 @@ export default function FormData({
 
     if (initialData) {
       setTargetMode("single");
+      const initialRangeStart = initialData.periodStartDate ? new Date(initialData.periodStartDate).toISOString().slice(0, 10) : null;
+      const initialRangeEnd = initialData.periodEndDate ? new Date(initialData.periodEndDate).toISOString().slice(0, 10) : null;
+      setPeriodMode(initialRangeStart && initialRangeEnd ? "range" : "month");
+      if (initialRangeStart && initialRangeEnd) {
+        setRangeStartDate(initialRangeStart);
+        setRangeEndDate(initialRangeEnd);
+      }
       const baseSalary = Number(initialData.basicSalary || 0);
       const sourceValues = (initialData.componentValues || []).filter(
         (item) =>
@@ -346,12 +366,15 @@ export default function FormData({
         userId: initialData.userId || initialData.user?.id || "",
         month: Number(initialData.month || createDefaultFormData().month),
         year: Number(initialData.year || createDefaultFormData().year),
+        startDate: initialRangeStart || undefined,
+        endDate: initialRangeEnd || undefined,
         sourceValues,
       });
       return;
     }
 
     const defaultData = createDefaultFormData();
+    setPeriodMode("month");
     setTargetMode("single");
     setOvertimeAmount(0);
     setLateDeductionAmount(0);
@@ -397,8 +420,8 @@ export default function FormData({
                     userId: val,
                     month: periodMode === "range" ? end.getMonth() + 1 : Number(formData.month || createDefaultFormData().month),
                     year: periodMode === "range" ? end.getFullYear() : Number(formData.year || createDefaultFormData().year),
-                    startDate: periodMode === "range" ? rangeStartDate : undefined,
-                    endDate: periodMode === "range" ? rangeEndDate : undefined,
+          startDate: periodMode === "range" ? rangeStartDate : undefined,
+          endDate: periodMode === "range" ? rangeEndDate : undefined,
                     sourceValues: formData.componentValues,
                   });
                 }}
@@ -407,8 +430,22 @@ export default function FormData({
               </div>
             ) : (
               <div className="space-y-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="payroll-branch">Cabang</Label>
+                  <Select value={branchId} onValueChange={setBranchId}>
+                    <SelectTrigger id="payroll-branch" className="bg-white dark:bg-slate-800">
+                      <SelectValue placeholder="Pilih cabang" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Semua Cabang</SelectItem>
+                      {branches.map((branch) => (
+                        <SelectItem key={branch.id} value={branch.id || ""}>{branch.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
                 <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-200">
-                  Payroll akan dibuat untuk seluruh karyawan. Nominal dihitung secara individual berdasarkan data masing-masing karyawan.
+                  Payroll akan dibuat untuk {branchId === "all" ? "seluruh karyawan di semua cabang" : `karyawan cabang ${branches.find((branch) => branch.id === branchId)?.name || "terpilih"}`}. Nominal dihitung secara individual berdasarkan data masing-masing karyawan.
                 </div>
                 <div className="rounded-xl border border-slate-200 p-4 dark:border-slate-800 dark:bg-slate-900/40">
                   <h3 className="font-semibold text-slate-900 dark:text-slate-100">Komponen yang Dihitung Otomatis</h3>
@@ -591,7 +628,7 @@ export default function FormData({
                     </div>
                   </div>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Perhitungan kehadiran dan lembur dihitung berdasarkan rentang tanggal ini. Periode slip tercatat pada bulan {months.find(m => m.value === (new Date(rangeEndDate).getMonth() + 1))?.label} {new Date(rangeEndDate).getFullYear()}.
+                    Perhitungan kehadiran dan lembur dihitung berdasarkan rentang tanggal ini.
                   </p>
                 </div>
               )}

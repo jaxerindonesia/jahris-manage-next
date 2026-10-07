@@ -18,7 +18,7 @@ import type { ReimbursementDetailForm, ReimbursementForm } from "../types";
 import ExpenseRow from "./expense-row";
 
 function emptyDetail(): ReimbursementDetailForm {
-  return { key: `${Date.now()}-${Math.random()}`, category: "", amount: 0, date: "", receiptUrls: [], files: [] };
+  return { key: `${Date.now()}-${Math.random()}`, category: "", description: "", amount: 0, date: "", receiptUrls: [], files: [] };
 }
 
 export default function ReimbursementFormData({ isOpen, initialData, onClose, onSuccess }: {
@@ -50,7 +50,7 @@ function ReimbursementFormContent({ initialData, onClose, onSuccess }: {
     accountNumber: initialData?.accountNumber || "",
     description: initialData?.description || "",
     details: initialData ? getReimbursementDetails(initialData).map((detail, index) => ({
-      ...detail, key: detail.id || `existing-${index}`, date: formatDateInputValue(detail.date), receiptUrls: getReceiptUrls(detail), files: [],
+      ...detail, description: detail.description || "", key: detail.id || `existing-${index}`, date: formatDateInputValue(detail.date), receiptUrls: getReceiptUrls(detail), files: [],
     })) : [emptyDetail()],
   }));
   const total = Math.round(form.details.reduce((sum, detail) => sum + detail.amount, 0) * 100) / 100;

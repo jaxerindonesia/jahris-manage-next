@@ -7,6 +7,8 @@ export interface PayrollDto {
     referenceNumber?: string | null;
     month: number;
     year: number;
+    periodStartDate?: Date | string | null;
+    periodEndDate?: Date | string | null;
     basicSalary: number;
     salaryType?: SalaryType;
     salaryRate?: number;
@@ -30,5 +32,6 @@ export interface PayrollDto {
         name: string;
         position?: string | null;
         department?: string | { name?: string | null } | null;
+        branch?: { id?: string; name?: string | null } | null;
     } | null;
 }

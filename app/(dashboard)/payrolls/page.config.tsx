@@ -82,9 +82,23 @@ export const columnFormats: DefaultColumnFormat<PayrollDto>[] = [
   },
   {
     key: "period",
+    title: "Bulan",
+    textClassName: "text-slate-700 dark:text-slate-200",
+    formatter: (_value, row) => row.periodStartDate && row.periodEndDate ? "-" : `${months.find((m) => m.value === row.month)?.label ?? row.month} ${row.year}`,
+  },
+  {
+    key: "periodRange",
     title: "Periode",
     textClassName: "text-slate-700 dark:text-slate-200",
-    formatter: (_value, row) => `${months.find((m) => m.value === row.month)?.label ?? row.month} ${row.year}`,
+    formatter: (_value, row) => row.periodStartDate && row.periodEndDate
+      ? `${new Date(row.periodStartDate).toLocaleDateString("id-ID")} s/d ${new Date(row.periodEndDate).toLocaleDateString("id-ID")}`
+      : "-",
+  },
+  {
+    key: "branch",
+    title: "Cabang",
+    textClassName: "text-slate-700 dark:text-slate-200",
+    formatter: (_value, row) => row.user?.branch?.name ?? "-",
   },
   {
     key: "referenceNumber",
