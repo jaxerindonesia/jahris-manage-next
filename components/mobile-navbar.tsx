@@ -1,12 +1,14 @@
 "use client";
 
-import { startTransition, useState, useEffect, useRef } from "react";
+import { startTransition, useState, useEffect, useRef, useSyncExternalStore } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "@/contexts/ThemeContext";
 import { usePermission } from "@/lib/helper/check-role";
 import { useTenantConfig } from "@/contexts/TenantConfigContext";
+import { usePlanFeatures } from "@/lib/helper/client-session";
+import { hasPlanFeature } from "@/lib/auth/feature-access";
 import {
   LayoutDashboard,
   Users,
@@ -27,16 +29,20 @@ import {
   Clock,
   ChevronDown,
   Split,
-  CalendarSync
+  CalendarSync,
+  CreditCard,
 } from "lucide-react";
 
 export default function MobileNavbar() {
   const { checkRoleMulti } = usePermission();
+  const planFeatures = usePlanFeatures();
   const pathname = usePathname();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [expandedMenus, setExpandedMenus] = useState<string[]>(
     pathname.startsWith("/finance")
       ? ["finance"]
+      : pathname.startsWith("/subscriptions") || pathname === "/tenants" || pathname === "/plans" || pathname === "/payment-methods"
+        ? ["subscription-management"]
       : pathname === "/work-shifts" || pathname === "/shift-schedules"
         ? ["shift-management"]
         : [],
@@ -48,6 +54,18 @@ export default function MobileNavbar() {
     theme === "dark"
       ? tenantConfig?.logoDarkUrl || tenantConfig?.logoUrl
       : tenantConfig?.logoUrl || tenantConfig?.logoDarkUrl;
+  const isSuperAdmin = useSyncExternalStore(
+    () => () => {},
+    () => {
+      try {
+        const user = JSON.parse(localStorage.getItem("hr_user_data") || "{}");
+        return String(user.role || user.roleName || "").toLowerCase().replace(/\s/g, "") === "superadmin";
+      } catch {
+        return false;
+      }
+    },
+    () => false,
+  );
 
   // Easter egg states
   const [showCredits, setShowCredits] = useState(false);
@@ -76,6 +94,20 @@ export default function MobileNavbar() {
       name: "Dashboard",
       icon: LayoutDashboard,
       path: "/dashboard",
+    },
+    {
+      id: "subscription-management",
+      name: "Manajemen Langganan",
+      icon: CreditCard,
+      path: "/subscriptions",
+      permissions: ["get-all", "get-by-id"],
+      superadminOnly: true,
+      subItems: [
+        { name: "Tenant", path: "/tenants" },
+        { name: "Plan", path: "/plans" },
+        { name: "Langganan", path: "/subscriptions" },
+        { name: "Metode Pembayaran", path: "/payment-methods" },
+      ],
     },
     {
       id: "branches",
@@ -176,6 +208,17 @@ export default function MobileNavbar() {
       permissions: ["get-all", "get-by-id"],
     },
   ].filter((item) => {
+    if ("superadminOnly" in item && item.superadminOnly) return isSuperAdmin;
+    const featureModels =
+      "permissionModels" in item && item.permissionModels
+        ? item.permissionModels
+        : [item.id];
+    if (
+      !isSuperAdmin &&
+      !featureModels.some((model) => hasPlanFeature(planFeatures, model))
+    ) {
+      return false;
+    }
     if (!("permissions" in item) || !item.permissions) return true;
     if ("permissionModels" in item && item.permissionModels) {
       return item.permissionModels.some((model) =>
@@ -216,6 +259,7 @@ export default function MobileNavbar() {
       permissions: ["get-all", "get-by-id"],
     },
   ].filter((item) => {
+    if (!isSuperAdmin && !hasPlanFeature(planFeatures, item.id)) return false;
     if (!("permissions" in item) || !item.permissions) return true;
     return checkRoleMulti(item.id, item.permissions);
   });

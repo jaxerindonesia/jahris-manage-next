@@ -23,6 +23,8 @@ export async function GET() {
       avatarUrl: auth.user.avatarUrl,
       faceDescriptor: auth.user.faceDescriptor,
       permissions: auth.user.permissions,
+      planName: auth.user.planName,
+      featurePermissions: auth.user.featurePermissions,
     },
   });
 }

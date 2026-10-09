@@ -44,14 +44,16 @@ import {
   Shield,
   ClipboardCheck,
   Receipt,
-  Building2,
   Banknote,
   ListTodo,
   Clock,
   Split,
-  CalendarSync
+  CalendarSync,
+  CreditCard,
 } from "lucide-react";
 import { usePermission } from "@/lib/helper/check-role";
+import { usePlanFeatures } from "@/lib/helper/client-session";
+import { hasPlanFeature } from "@/lib/auth/feature-access";
 
 type SidebarSubItem = {
   name: string;
@@ -72,11 +74,14 @@ type SidebarItem = {
 
 export default function DesktopSidebar() {
   const { checkRoleMulti } = usePermission();
+  const planFeatures = usePlanFeatures();
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [expandedMenus, setExpandedMenus] = useState<string[]>(
     pathname.startsWith("/finance")
       ? ["finance"]
+      : pathname.startsWith("/subscriptions") || pathname === "/tenants" || pathname === "/plans" || pathname === "/payment-methods"
+        ? ["subscription-management"]
       : pathname === "/work-shifts" || pathname === "/shift-schedules"
         ? ["shift-management"]
         : [],
@@ -123,7 +128,9 @@ export default function DesktopSidebar() {
       try {
         const userData = JSON.parse(raw);
         const rawRoleName =
-          typeof userData?.role === "string" ? userData.role : userData?.role?.name;
+          typeof userData?.role === "string"
+            ? userData.role
+            : userData?.role?.name || userData?.roleName;
         const roleName = rawRoleName?.toLowerCase().replace(/\s/g, "") || "";
         return roleName === "superadmin";
       } catch {
@@ -159,12 +166,18 @@ export default function DesktopSidebar() {
         path: "/dashboard",
       },
       {
-        id: "tenants",
-        name: "Tenant",
-        icon: Building2,
-        path: "/tenants",
-        permissions: ["superadmin"],
+        id: "subscription-management",
+        name: "Manajemen Langganan",
+        icon: CreditCard,
+        path: "/subscriptions",
+        permissions: ["get-all", "get-by-id"],
         superadminOnly: true,
+        subItems: [
+          { name: "Tenant", path: "/tenants" },
+          { name: "Plan", path: "/plans" },
+          { name: "Langganan", path: "/subscriptions" },
+          { name: "Metode Pembayaran", path: "/payment-methods" },
+        ],
       },
       {
         id: "branches",
@@ -296,10 +309,17 @@ export default function DesktopSidebar() {
     ];
 
     return allItems.filter((item) => {
-      if (!item.permissions) return true;
       if (item.superadminOnly) {
         return isSuperAdmin;
       }
+      const featureModels = item.permissionModels ?? [item.id];
+      if (
+        !isSuperAdmin &&
+        !featureModels.some((model) => hasPlanFeature(planFeatures, model))
+      ) {
+        return false;
+      }
+      if (!item.permissions) return true;
       if (item.permissionModels) {
         return item.permissionModels.some((model) =>
           checkRoleMulti(model, item.permissions ?? []),
@@ -307,7 +327,7 @@ export default function DesktopSidebar() {
       }
       return checkRoleMulti(item.id, item.permissions);
     });
-  }, [checkRoleMulti, isSuperAdmin]);
+  }, [checkRoleMulti, isSuperAdmin, planFeatures]);
 
   return (
     <>

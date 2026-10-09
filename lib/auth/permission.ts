@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { isSuperAdmin, type SessionUser } from "@/lib/auth/session";
+import { hasPlanPermission } from "@/lib/auth/feature-access";
 
 export function hasPermission(
   user: SessionUser,
@@ -7,6 +8,7 @@ export function hasPermission(
   action: string,
 ) {
   if (isSuperAdmin(user.roleName)) return true;
+  if (!hasPlanPermission(user.featurePermissions, model, action)) return false;
 
   return user.permissions.some(
     (permission) =>
