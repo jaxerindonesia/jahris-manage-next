@@ -6,6 +6,7 @@ import {
   handleUnauthorizedClient,
   UNAUTHORIZED_EVENT,
 } from "@/lib/helper/response-api";
+import { CLIENT_SESSION_UPDATED_EVENT } from "@/lib/helper/client-session";
 
 const SESSION_CHECK_INTERVAL_MS = 10000;
 const SESSION_REHYDRATE_RELOAD_KEY = "hr_session_rehydrated";
@@ -39,13 +40,18 @@ export default function AuthSessionGuard() {
         if (sessionUser) {
           const rawUserData = localStorage.getItem("hr_user_data");
           const rawUserRole = localStorage.getItem("hr_user_role");
-          if (!rawUserData || !rawUserRole) {
-            localStorage.setItem("hr_user_data", JSON.stringify(sessionUser));
-            localStorage.setItem(
-              "hr_user_role",
-              JSON.stringify(sessionUser.permissions ?? []),
-            );
+          const nextUserData = JSON.stringify(sessionUser);
+          const nextUserRole = JSON.stringify(sessionUser.permissions ?? []);
+          const sessionChanged =
+            rawUserData !== nextUserData || rawUserRole !== nextUserRole;
 
+          if (sessionChanged) {
+            localStorage.setItem("hr_user_data", nextUserData);
+            localStorage.setItem("hr_user_role", nextUserRole);
+            window.dispatchEvent(new Event(CLIENT_SESSION_UPDATED_EVENT));
+          }
+
+          if (!rawUserData || !rawUserRole) {
             const hasReloadedAfterRehydrate =
               sessionStorage.getItem(SESSION_REHYDRATE_RELOAD_KEY) === "true";
 

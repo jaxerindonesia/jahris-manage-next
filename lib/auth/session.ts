@@ -4,6 +4,7 @@ import jwt from "jsonwebtoken";
 import prisma from "@/lib/prisma";
 import { writeAuditLog } from "@/lib/security/audit-log";
 import { parseFaceDescriptor } from "@/lib/helper/face-descriptor";
+import { parsePlanFeatures } from "@/lib/auth/feature-access";
 
 type JwtPayload = {
   sub?: string;
@@ -38,6 +39,8 @@ export type SessionUser = {
     model: string;
     action: string;
   }>;
+  planName: string | null;
+  featurePermissions: string[] | null;
 };
 
 export type SessionValidationResult =
@@ -108,6 +111,18 @@ export async function getSessionUser(): Promise<SessionValidationResult> {
             subscriptionEnd: true,
             companyName: true,
             logoUrl: true,
+            subscriptions: {
+              where: {
+                status: "ACTIVE",
+                startDate: { lte: new Date() },
+                endDate: { gte: new Date() },
+              },
+              orderBy: { updatedAt: "desc" },
+              take: 1,
+              select: {
+                plan: { select: { name: true, featurePermission: true } },
+              },
+            },
           },
         },
       },
@@ -170,6 +185,8 @@ export async function getSessionUser(): Promise<SessionValidationResult> {
       }
     }
 
+    const planAccess = parsePlanFeatures(user.tenant?.subscriptions[0]?.plan);
+
     return {
       ok: true,
       token,
@@ -187,6 +204,8 @@ export async function getSessionUser(): Promise<SessionValidationResult> {
         permissions: Array.isArray(user.role.permission)
           ? (user.role.permission as Array<{ model: string; action: string }>)
           : [],
+        planName: planAccess.planName,
+        featurePermissions: planAccess.featurePermissions,
       },
     };
   } catch (error) {

@@ -2,7 +2,14 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import * as faceapi from "face-api.js";
-import { X, Camera, CheckCircle, XCircle, Loader2, ScanFace } from "lucide-react";
+import {
+  X,
+  Camera,
+  CheckCircle,
+  XCircle,
+  Loader2,
+  ScanFace,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ensureFaceModelLoaded } from "@/lib/helper/face-models";
 import { parseFaceDescriptor } from "@/lib/helper/face-descriptor";
@@ -194,10 +201,10 @@ export default function FaceRecognitionModal({
         referenceDescriptorRef.current = cachedDescriptor;
       }
       const descriptorSource = storedDescriptor
-        ? "database" as const
+        ? ("database" as const)
         : cachedDescriptor
-          ? "cache" as const
-          : "image" as const;
+          ? ("cache" as const)
+          : ("image" as const);
 
       if (!referenceDescriptorRef.current && !referenceImageUrl) {
         setStatus("no-reference");
@@ -208,7 +215,8 @@ export default function FaceRecognitionModal({
         if (referenceDescriptorRef.current || !referenceImageUrl) return;
         setStatus("loading-reference");
         try {
-          referenceDescriptorRef.current = await loadAndCacheFaceDescriptor(referenceImageUrl);
+          referenceDescriptorRef.current =
+            await loadAndCacheFaceDescriptor(referenceImageUrl);
         } catch {
           referenceDescriptorRef.current = null;
         }
@@ -235,12 +243,16 @@ export default function FaceRecognitionModal({
 
           const videoTrack = stream.getVideoTracks()[0];
           if (videoTrack && typeof videoTrack.getCapabilities === "function") {
-            const capabilities = videoTrack.getCapabilities() as MediaTrackCapabilities & {
-              zoom?: { min: number; max: number; step: number };
-            };
+            const capabilities =
+              videoTrack.getCapabilities() as MediaTrackCapabilities & {
+                zoom?: { min: number; max: number; step: number };
+              };
             const minimumZoom = capabilities.zoom?.min;
 
-            if (typeof minimumZoom === "number" && Number.isFinite(minimumZoom)) {
+            if (
+              typeof minimumZoom === "number" &&
+              Number.isFinite(minimumZoom)
+            ) {
               try {
                 await videoTrack.applyConstraints({
                   advanced: [{ zoom: minimumZoom } as MediaTrackConstraintSet],
@@ -303,10 +315,15 @@ export default function FaceRecognitionModal({
         const leftEye = landmarks.getLeftEye();
         const rightEye = landmarks.getRightEye();
         const noseTip = nose[3];
-        const leftEyeCenterX = leftEye.reduce((sum, point) => sum + point.x, 0) / leftEye.length;
-        const rightEyeCenterX = rightEye.reduce((sum, point) => sum + point.x, 0) / rightEye.length;
+        const leftEyeCenterX =
+          leftEye.reduce((sum, point) => sum + point.x, 0) / leftEye.length;
+        const rightEyeCenterX =
+          rightEye.reduce((sum, point) => sum + point.x, 0) / rightEye.length;
         const eyeCenterX = (leftEyeCenterX + rightEyeCenterX) / 2;
-        const eyeDistance = Math.max(Math.abs(rightEyeCenterX - leftEyeCenterX), 1);
+        const eyeDistance = Math.max(
+          Math.abs(rightEyeCenterX - leftEyeCenterX),
+          1,
+        );
         return (noseTip.x - eyeCenterX) / eyeDistance;
       };
 
@@ -328,7 +345,10 @@ export default function FaceRecognitionModal({
         let detection;
         try {
           if (!scanContext) throw new Error("Camera canvas unavailable");
-          if (scanCanvas.width !== video.videoWidth || scanCanvas.height !== video.videoHeight) {
+          if (
+            scanCanvas.width !== video.videoWidth ||
+            scanCanvas.height !== video.videoHeight
+          ) {
             scanCanvas.width = video.videoWidth;
             scanCanvas.height = video.videoHeight;
           }
@@ -336,7 +356,10 @@ export default function FaceRecognitionModal({
           detection = await faceapi
             .detectSingleFace(
               scanCanvas,
-              new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.3 }),
+              new faceapi.TinyFaceDetectorOptions({
+                inputSize: 224,
+                scoreThreshold: 0.3,
+              }),
             )
             .withFaceLandmarks();
         } catch {
@@ -352,7 +375,8 @@ export default function FaceRecognitionModal({
         if (!detection) {
           consecutiveNoFaceRef.current += 1;
           // Avoid flickering when a slower phone misses only one or two frames.
-          if (consecutiveNoFaceRef.current >= 4 && !cancelled) setStatus("no-face");
+          if (consecutiveNoFaceRef.current >= 4 && !cancelled)
+            setStatus("no-face");
           scheduleNextFrame();
           return;
         }
@@ -360,7 +384,8 @@ export default function FaceRecognitionModal({
 
         const faceBox = detection.detection.box;
         const faceCenterX = (faceBox.x + faceBox.width / 2) / scanCanvas.width;
-        const faceCenterY = (faceBox.y + faceBox.height / 2) / scanCanvas.height;
+        const faceCenterY =
+          (faceBox.y + faceBox.height / 2) / scanCanvas.height;
         const faceWidthRatio = faceBox.width / scanCanvas.width;
         const faceHeightRatio = faceBox.height / scanCanvas.height;
         const faceIsWellPositioned =
@@ -433,9 +458,10 @@ export default function FaceRecognitionModal({
         }
 
         const baselineYaw = baselineYawRef.current;
-        const yawChange = baselineYaw === null
-          ? 0
-          : getYawRatio(detection.landmarks) - baselineYaw;
+        const yawChange =
+          baselineYaw === null
+            ? 0
+            : getYawRatio(detection.landmarks) - baselineYaw;
 
         const REQUIRED_HOLD_FRAMES = 2;
         const MINIMUM_MOVEMENT_MS = 1000;
@@ -457,7 +483,8 @@ export default function FaceRecognitionModal({
           rightTurnFramesRef.current = 0;
         }
 
-        const movementDuration = performance.now() - movementStartedAtRef.current;
+        const movementDuration =
+          performance.now() - movementStartedAtRef.current;
         if (
           !turnedLeftRef.current ||
           !turnedRightRef.current ||
@@ -487,7 +514,6 @@ export default function FaceRecognitionModal({
           }
           onSuccess(captureDataUrl);
         }, 100);
-
       };
 
       detectFrame();
@@ -499,7 +525,17 @@ export default function FaceRecognitionModal({
       cancelled = true;
       cleanup();
     };
-  }, [isOpen, mode, modelsLoaded, referenceDescriptor, referenceImageUrl, onSuccess, cleanup, getCaptureDataUrl, stopCamera]);
+  }, [
+    isOpen,
+    mode,
+    modelsLoaded,
+    referenceDescriptor,
+    referenceImageUrl,
+    onSuccess,
+    cleanup,
+    getCaptureDataUrl,
+    stopCamera,
+  ]);
 
   if (!isOpen) return null;
 
@@ -543,7 +579,8 @@ export default function FaceRecognitionModal({
       icon: <Camera className="w-5 h-5" />,
     },
     "no-reference": {
-      label: "Foto referensi tidak ada — hubungi admin untuk mendaftarkan wajah",
+      label:
+        "Foto referensi tidak ada — hubungi admin untuk mendaftarkan wajah",
       color: "text-red-400",
       icon: <XCircle className="w-5 h-5" />,
     },
@@ -627,9 +664,9 @@ export default function FaceRecognitionModal({
                         ? "border-red-400"
                         : status === "position-required"
                           ? "border-orange-300 shadow-[0_0_18px_rgba(251,146,60,0.8)]"
-                        : status === "movement-required"
-                          ? "border-indigo-300 shadow-[0_0_18px_rgba(129,140,248,0.8)]"
-                          : "border-indigo-400"
+                          : status === "movement-required"
+                            ? "border-indigo-300 shadow-[0_0_18px_rgba(129,140,248,0.8)]"
+                            : "border-indigo-400"
                   }`}
                 />
               </div>
@@ -646,7 +683,7 @@ export default function FaceRecognitionModal({
           {!shouldSuppressStatusUi && status === "movement-required" && (
             <div className="pointer-events-none absolute inset-x-0 bottom-4 flex justify-center px-3">
               <div className="rounded-full bg-indigo-600/90 px-4 py-2 text-center text-xs font-bold text-white shadow-lg backdrop-blur-sm sm:text-sm">
-                GERAKKAN KEPALA KE KANAN DAN KIRI
+                GERAKKAN KEPALA PERLAHAN KE KANAN DAN KIRI
               </div>
             </div>
           )}
@@ -673,19 +710,23 @@ export default function FaceRecognitionModal({
             </div>
           )}
 
-          {!shouldSuppressStatusUi && (status === "loading-models" || status === "loading-reference") && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900/90 gap-3">
-              <Loader2 className="w-10 h-10 text-indigo-400 animate-spin" />
-              <p className="text-gray-300 text-sm">{cfg.label}</p>
-            </div>
-          )}
+          {!shouldSuppressStatusUi &&
+            (status === "loading-models" || status === "loading-reference") && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900/90 gap-3">
+                <Loader2 className="w-10 h-10 text-indigo-400 animate-spin" />
+                <p className="text-gray-300 text-sm">{cfg.label}</p>
+              </div>
+            )}
 
-          {!shouldSuppressStatusUi && (status === "no-camera" || status === "error") && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900/95 gap-3">
-              <Camera className="w-12 h-12 text-gray-500" />
-              <p className="text-gray-400 text-sm text-center px-6">{cfg.label}</p>
-            </div>
-          )}
+          {!shouldSuppressStatusUi &&
+            (status === "no-camera" || status === "error") && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900/95 gap-3">
+                <Camera className="w-12 h-12 text-gray-500" />
+                <p className="text-gray-400 text-sm text-center px-6">
+                  {cfg.label}
+                </p>
+              </div>
+            )}
         </div>
 
         <div className="px-4 sm:px-5 py-2 sm:py-3 bg-gray-800/60 border-t border-gray-700">
@@ -693,7 +734,9 @@ export default function FaceRecognitionModal({
             {!shouldSuppressStatusUi && (
               <>
                 {cfg.icon}
-                <span className="text-xs sm:text-sm font-medium line-clamp-1">{cfg.label}</span>
+                <span className="text-xs sm:text-sm font-medium line-clamp-1">
+                  {cfg.label}
+                </span>
                 {matchScore !== null && status === "no-match" && (
                   <span className="ml-auto text-[10px] sm:text-xs text-gray-400 whitespace-nowrap">
                     Sim: {(matchScore * 100).toFixed(0)}%

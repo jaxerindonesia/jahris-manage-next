@@ -17,46 +17,122 @@ enum JournalStatus {
   VOID
 }
 
+enum PlanBillingCycle {
+  MONTHLY
+  YEARLY
+}
+
+enum TenantSubscriptionStatus {
+  PENDING
+  ACTIVE
+  EXPIRED
+  CANCELLED
+}
+
 model Tenant {
-  id                      String                   @id @default(uuid()) @db.Uuid
-  companyName             String                   @map("company_name")
-  adminEmail              String                   @map("admin_email")
-  isActive                Boolean                  @default(true) @map("is_active")
-  subscriptionStart       DateTime?                @map("subscription_start")
-  subscriptionEnd         DateTime?                @map("subscription_end")
-  createdAt               DateTime                 @default(now()) @map("created_at")
-  updatedAt               DateTime                 @updatedAt @map("updated_at")
-  logoUrl                 String?                  @map("logo_url")
-  logoDarkUrl             String?                  @map("logo_dark_url")
-  attendanceConfigs       AttendanceConfig[]
+  id                         String                      @id @default(uuid()) @db.Uuid
+  companyName                String                      @map("company_name")
+  adminEmail                 String                      @map("admin_email")
+  isActive                   Boolean                     @default(true) @map("is_active")
+  subscriptionStart          DateTime?                   @map("subscription_start")
+  subscriptionEnd            DateTime?                   @map("subscription_end")
+  createdAt                  DateTime                    @default(now()) @map("created_at")
+  updatedAt                  DateTime                    @updatedAt @map("updated_at")
+  logoUrl                    String?                     @map("logo_url")
+  logoDarkUrl                String?                     @map("logo_dark_url")
+  attendanceConfigs          AttendanceConfig[]
   attendanceAbsentDeductions AttendanceAbsentDeduction[]
-  attendances             Attendance[]
-  overtimeConfigs         OvertimeConfig[]
-  overtimeApproverConfigs OvertimeApproverConfig[]
-  overtimes               Overtime[]
-  payrollComponentConfigs PayrollComponentConfig[]
-  departments             Department[]
-  branches                Branch[]
-  workShifts              WorkShift[]
-  employeeShiftSchedules  EmployeeShiftSchedule[]
-  leaveConfigs            LeaveConfig[]
-  payrolls                Payroll[]
-  performances            Performance[]
-  reimbursements          Reimbursement[]
-  roles                   Role[]
-  submissionTypes         SubmissionType[]
-  submissions             Submission[]
-  pettyCashes             PettyCash[]
-  accounts                Account[]
-  accountCategories       AccountCategory[]
-  banks                   Bank[]
-  customers               Customer[]
-  vendors                 Vendor[]
-  taskBoards              TaskBoard[]
-  tasks                   Task[]
-  users                   User[]
+  attendances                Attendance[]
+  overtimeConfigs            OvertimeConfig[]
+  overtimeApproverConfigs    OvertimeApproverConfig[]
+  overtimes                  Overtime[]
+  payrollComponentConfigs    PayrollComponentConfig[]
+  departments                Department[]
+  branches                   Branch[]
+  workShifts                 WorkShift[]
+  employeeShiftSchedules     EmployeeShiftSchedule[]
+  leaveConfigs               LeaveConfig[]
+  payrolls                   Payroll[]
+  performances               Performance[]
+  reimbursements             Reimbursement[]
+  roles                      Role[]
+  submissionTypes            SubmissionType[]
+  submissions                Submission[]
+  pettyCashes                PettyCash[]
+  accounts                   Account[]
+  accountCategories          AccountCategory[]
+  banks                      Bank[]
+  customers                  Customer[]
+  vendors                    Vendor[]
+  taskBoards                 TaskBoard[]
+  tasks                      Task[]
+  users                      User[]
+  subscriptions              TenantSubscription[]
 
   @@map("tenants")
+}
+
+model Plan {
+  id                 String               @id @default(uuid()) @db.Uuid
+  name               String
+  description        String
+  featureDescription Json                 @map("feature_description")
+  featurePermission  Json                 @map("feature_permission")
+  price              Int?
+  type               PlanBillingCycle
+  isActive           Boolean              @default(true) @map("is_active")
+  createdAt          DateTime             @default(now()) @map("created_at")
+  updatedAt          DateTime             @updatedAt @map("updated_at")
+  subscriptions      TenantSubscription[]
+
+  @@unique([name, type])
+  @@map("plans")
+}
+
+model PaymentMethod {
+  id            String               @id @default(uuid()) @db.Uuid
+  name          String               @db.VarChar(100)
+  code          String               @unique @db.VarChar(50)
+  description   String?
+  provider      String               @db.VarChar(50)
+  providerCode  String?              @map("provider_code") @db.VarChar(100)
+  category      String               @db.VarChar(50)
+  feeType       String               @map("fee_type") @db.VarChar(20)
+  feeFixed      Decimal              @default(0) @map("fee_fixed") @db.Decimal(15, 2)
+  feePercentage Decimal              @default(0) @map("fee_percentage") @db.Decimal(8, 4)
+  feeBearer     String               @default("customer") @map("fee_bearer") @db.VarChar(20)
+  minAmount     Decimal              @default(0) @map("min_amount") @db.Decimal(15, 2)
+  maxAmount     Decimal?             @map("max_amount") @db.Decimal(15, 2)
+  iconUrl       String?              @map("icon_url")
+  isActive      Boolean              @default(true) @map("is_active")
+  sortOrder     Int                  @default(0) @map("sort_order")
+  createdAt     DateTime             @default(now()) @map("created_at")
+  updatedAt     DateTime             @updatedAt @map("updated_at")
+  subscriptions TenantSubscription[]
+
+  @@index([category, isActive, sortOrder])
+  @@map("payment_methods")
+}
+
+model TenantSubscription {
+  id              String                   @id @default(uuid()) @db.Uuid
+  tenantId        String                   @map("tenant_id") @db.Uuid
+  planId          String                   @map("plan_id") @db.Uuid
+  paymentMethodId String?                  @map("payment_method_id") @db.Uuid
+  startDate       DateTime                 @map("start_date")
+  endDate         DateTime                 @map("end_date")
+  status          TenantSubscriptionStatus @default(PENDING)
+  createdAt       DateTime                 @default(now()) @map("created_at")
+  updatedAt       DateTime                 @updatedAt @map("updated_at")
+  tenant          Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plan            Plan                     @relation(fields: [planId], references: [id], onDelete: Restrict)
+  paymentMethod   PaymentMethod?           @relation(fields: [paymentMethodId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([planId])
+  @@index([paymentMethodId])
+  @@index([status, endDate])
+  @@map("tenant_subscriptions")
 }
 
 model Role {
@@ -383,11 +459,11 @@ model AttendanceConfig {
 }
 
 model AttendanceAbsentDeduction {
-  id        String   @id @default(uuid()) @db.Uuid
-  tenantId  String   @map("tenant_id") @db.Uuid
-  dayOfWeek String   @map("day_of_week")
-  amount    Float    @default(0)
-  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id        String @id @default(uuid()) @db.Uuid
+  tenantId  String @map("tenant_id") @db.Uuid
+  dayOfWeek String @map("day_of_week")
+  amount    Float  @default(0)
+  tenant    Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([tenantId, dayOfWeek])
   @@map("attendance_absent_deductions")
@@ -570,25 +646,25 @@ model Performance {
 }
 
 model Reimbursement {
-  id              String    @id @default(uuid()) @db.Uuid
-  userId          String    @map("user_id") @db.Uuid
-  referenceNumber String?   @map("reference_number")
+  id              String                @id @default(uuid()) @db.Uuid
+  userId          String                @map("user_id") @db.Uuid
+  referenceNumber String?               @map("reference_number")
   title           String
   category        String
   amount          Float
   date            DateTime
-  bankName        String?   @map("bank_name")
-  accountNumber   String?   @map("account_number")
+  bankName        String?               @map("bank_name")
+  accountNumber   String?               @map("account_number")
   description     String?
-  receiptUrl      String?   @map("receipt_url")
-  status          String    @default("pending")
-  approvedBy      String?   @map("approved_by")
-  approvedAt      DateTime? @map("approved_at")
-  createdAt       DateTime  @default(now()) @map("created_at")
-  updatedAt       DateTime  @updatedAt @map("updated_at")
-  tenantId        String?   @map("tenant_id") @db.Uuid
-  tenant          Tenant?   @relation(fields: [tenantId], references: [id])
-  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  receiptUrl      String?               @map("receipt_url")
+  status          String                @default("pending")
+  approvedBy      String?               @map("approved_by")
+  approvedAt      DateTime?             @map("approved_at")
+  createdAt       DateTime              @default(now()) @map("created_at")
+  updatedAt       DateTime              @updatedAt @map("updated_at")
+  tenantId        String?               @map("tenant_id") @db.Uuid
+  tenant          Tenant?               @relation(fields: [tenantId], references: [id])
+  user            User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
   details         ReimbursementDetail[]
 
   @@index([tenantId])
@@ -637,17 +713,17 @@ model PettyCash {
 }
 
 model PettyCashUsage {
-  id          String    @id @default(uuid()) @db.Uuid
-  pettyCashId String    @map("petty_cash_id") @db.Uuid
-  description String
-  amount      Float
-  usageDate   DateTime  @map("usage_date")
-  receiptUrl  String?   @map("receipt_url")
-  receiptUrls String[]  @default([]) @map("receipt_urls")
-  transactionType String @default("EXPENSE") @map("transaction_type")
-  createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime  @updatedAt @map("updated_at")
-  pettyCash   PettyCash @relation(fields: [pettyCashId], references: [id], onDelete: Cascade)
+  id              String    @id @default(uuid()) @db.Uuid
+  pettyCashId     String    @map("petty_cash_id") @db.Uuid
+  description     String
+  amount          Float
+  usageDate       DateTime  @map("usage_date")
+  receiptUrl      String?   @map("receipt_url")
+  receiptUrls     String[]  @default([]) @map("receipt_urls")
+  transactionType String    @default("EXPENSE") @map("transaction_type")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  pettyCash       PettyCash @relation(fields: [pettyCashId], references: [id], onDelete: Cascade)
 
   @@index([pettyCashId])
   @@map("petty_cash_usages")

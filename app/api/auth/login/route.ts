@@ -10,6 +10,7 @@ import { writeAuditLog } from "@/lib/security/audit-log";
 import { consumeRateLimit } from "@/lib/security/rate-limit";
 import { getRequestIp } from "@/lib/security/request";
 import { parseFaceDescriptor } from "@/lib/helper/face-descriptor";
+import { parsePlanFeatures } from "@/lib/auth/feature-access";
 
 export async function POST(req: NextRequest) {
   try {
@@ -71,7 +72,22 @@ export async function POST(req: NextRequest) {
             permission: true,
           },
         },
-        tenant: true,
+        tenant: {
+          include: {
+            subscriptions: {
+              where: {
+                status: "ACTIVE",
+                startDate: { lte: new Date() },
+                endDate: { gte: new Date() },
+              },
+              orderBy: { updatedAt: "desc" },
+              take: 1,
+              select: {
+                plan: { select: { name: true, featurePermission: true } },
+              },
+            },
+          },
+        },
       },
     });
 
@@ -187,6 +203,8 @@ export async function POST(req: NextRequest) {
       },
     });
 
+    const planAccess = parsePlanFeatures(user.tenant?.subscriptions[0]?.plan);
+
     const response = NextResponse.json({
       message: "Login successful",
       user: {
@@ -201,6 +219,8 @@ export async function POST(req: NextRequest) {
         tenantName: user.tenant?.companyName ?? null,
         tenantLogoUrl: user.tenant?.logoUrl ?? null,
         departmentId: user.departmentId ?? null,
+        planName: planAccess.planName,
+        featurePermissions: planAccess.featurePermissions,
       },
     });
 

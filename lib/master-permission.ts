@@ -67,4 +67,16 @@ export const MASTER_PERMISSIONS = [
     model: "tenants",
     actions: ["get-all", "get-by-id", "create", "update", "delete"],
   },
+  {
+    model: "tenant-subscriptions",
+    actions: ["get-all", "get-by-id", "create", "update", "delete", "activate", "cancel", "renew"],
+  },
+  {
+    model: "plans",
+    actions: ["get-all", "get-by-id", "create", "update", "delete"],
+  },
+  {
+    model: "payment-methods",
+    actions: ["get-all", "get-by-id", "create", "update", "delete"],
+  },
 ];

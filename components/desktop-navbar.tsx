@@ -169,6 +169,9 @@ export default function DesktopNavbar() {
       reimbursements: "Reimbursement",
       overtimes: "Lembur",
       tenants: "Tenant",
+      subscriptions: "Manajemen Langganan",
+      plans: "Plan",
+      "payment-methods": "Metode Pembayaran",
     };
 
     if (path === "finance") {
@@ -193,6 +196,8 @@ export default function DesktopNavbar() {
 
       return subPath ? `Manajemen Shift - ${shiftTitles[subPath] || "Shift"}` : "Shift";
     }
+
+    if (path === "subscriptions") return "Langganan";
 
     return titles[path] || "Dashboard";
   };
