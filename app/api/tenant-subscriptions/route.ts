@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import type { Prisma, TenantSubscriptionStatus } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { requireSessionUser, requireSuperAdmin } from "@/lib/auth/tenant";
+import { syncTenantSubscriptionPeriod } from "@/lib/helper/tenant-subscription";
 
 const statuses = new Set(["PENDING", "ACTIVE", "EXPIRED", "CANCELLED"]);
 
@@ -46,7 +47,7 @@ export async function POST(req: NextRequest) {
   const data = await prisma.$transaction(async (tx) => {
     if (status === "ACTIVE") await tx.tenantSubscription.updateMany({ where: { tenantId, status: "ACTIVE" }, data: { status: "CANCELLED" } });
     const subscription = await tx.tenantSubscription.create({ data: { tenantId, planId, paymentMethodId, startDate, endDate, status }, include: { tenant: { select: { id: true, companyName: true } }, plan: { select: { id: true, name: true, type: true, price: true } }, paymentMethod: { select: { id: true, name: true, provider: true } } } });
-    if (status === "ACTIVE") await tx.tenant.update({ where: { id: tenantId }, data: { subscriptionStart: startDate, subscriptionEnd: endDate } });
+    await syncTenantSubscriptionPeriod(tx, tenantId);
     return subscription;
   });
   return NextResponse.json({ message: "Subscription berhasil dibuat", data }, { status: 201 });

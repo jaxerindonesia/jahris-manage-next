@@ -26,6 +26,16 @@ function getFeatureSnapshot() {
   }
 }
 
+function getSuperAdminSnapshot() {
+  try {
+    const user = JSON.parse(localStorage.getItem("hr_user_data") || "{}");
+    const role = typeof user.role === "string" ? user.role : user.role?.name || user.roleName;
+    return String(role || "").toLowerCase().replace(/\s/g, "") === "superadmin";
+  } catch {
+    return false;
+  }
+}
+
 export function usePlanFeatures() {
   const snapshot = useSyncExternalStore(subscribe, getFeatureSnapshot, () => "null");
 
@@ -38,4 +48,8 @@ export function usePlanFeatures() {
       return [];
     }
   }, [snapshot]);
+}
+
+export function useIsSuperAdmin() {
+  return useSyncExternalStore(subscribe, getSuperAdminSnapshot, () => false);
 }

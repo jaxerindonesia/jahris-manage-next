@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
   ArrowRight,
@@ -208,9 +208,9 @@ function getListTheme(name: string, index: number) {
 
 export default function TaskManagementPage() {
   const router = useRouter();
-  const params = useParams<{ id_department?: string }>();
+  const searchParams = useSearchParams();
   const [departments, setDepartments] = useState<DepartmentCard[]>([]);
-  const routeDepartmentId = typeof params?.id_department === "string" ? params.id_department : "";
+  const routeDepartmentId = searchParams.get("department") || "";
   const [selectedDepartmentId, setSelectedDepartmentId] = useState(routeDepartmentId);
   const [board, setBoard] = useState<BoardData | null>(null);
   const [departmentSearch, setDepartmentSearch] = useState("");
@@ -1271,7 +1271,9 @@ export default function TaskManagementPage() {
               return (
                 <button
                   key={department.id}
-                  onClick={() => router.push(`/task-managements/${department.id}`)}
+                  onClick={() =>
+                    router.push(`/task-managements?department=${encodeURIComponent(department.id)}`)
+                  }
                   className={`group overflow-hidden rounded-xl border border-gray-100 bg-white text-left shadow-sm transition-all hover:-translate-y-1 hover:shadow-lg dark:border-slate-700 dark:bg-slate-800 ${departmentView === "list" ? "flex items-stretch" : ""
                     }`}
                 >

@@ -1,5 +1,6 @@
 export type BillingCycle = "MONTHLY" | "YEARLY";
 export type SubscriptionStatus = "PENDING" | "ACTIVE" | "EXPIRED" | "CANCELLED";
+export type SubscriptionTab = "subscriptions" | "plans" | "payment-methods";
 
 export interface PlanDto {
   id: string;
@@ -44,7 +45,13 @@ export interface TenantSubscriptionDto {
   paymentMethod: { id: string; name: string; provider: string } | null;
 }
 
-export interface SubscriptionOptionDto {
-  id: string;
-  label: string;
-}
+export type SubscriptionRowMap = {
+  subscriptions: TenantSubscriptionDto;
+  plans: PlanDto;
+  "payment-methods": PaymentMethodDto;
+};
+
+export type SubscriptionRow = SubscriptionRowMap[SubscriptionTab];
+export type TenantOption = Pick<TenantSubscriptionDto["tenant"], "id" | "companyName">;
+export type PlanOption = Pick<PlanDto, "id" | "name" | "type" | "price" | "isActive">;
+export type PaymentMethodOption = Pick<PaymentMethodDto, "id" | "name" | "provider" | "isActive">;

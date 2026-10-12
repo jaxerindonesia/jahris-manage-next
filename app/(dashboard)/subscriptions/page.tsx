@@ -1,66 +1,117 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import DynamicPage from "@/components/dynamic-page";
-import type { TenantSubscriptionDto } from "@/lib/dto/subscription";
-import { deleteSubscriptionRow, fetchSubscriptionOptions, fetchSubscriptionRows } from "./actions";
-import ManagementDialog from "./components/management-dialog";
-import { headerToolbar, ITEMS_PER_PAGE, renderManagementActions, subscriptionColumns } from "./page.config";
-import type { PaymentMethodOption, PlanOption, TenantOption } from "./types";
+import type {
+  PaymentMethodOption,
+  PlanOption,
+  TenantOption,
+  TenantSubscriptionDto,
+} from "@/lib/dto/subscription";
+import { fetchSubscriptionOptions } from "@/app/api/subscription-management/client";
+import {
+  ITEMS_PER_PAGE,
+  useSubscriptionManagement,
+} from "@/lib/hooks/use-subscription-management";
+import SubscriptionFormData from "./components/form-data";
+import {
+  ManagementActions,
+  ManagementAccessDenied,
+  ManagementToolbar,
+  subscriptionColumns,
+} from "./page.config";
 
 export default function TenantSubscriptionsPage() {
-  const [rows, setRows] = useState<TenantSubscriptionDto[]>([]);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
-  const [search, setSearch] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [showFilter, setShowFilter] = useState(false);
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [selected, setSelected] = useState<TenantSubscriptionDto>();
-  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const management = useSubscriptionManagement("subscriptions", {
+    loadError: "Gagal mengambil langganan",
+    deleteError: "Gagal menghapus langganan",
+    deleteSuccess: "Langganan berhasil dihapus",
+  });
   const [tenants, setTenants] = useState<TenantOption[]>([]);
   const [plans, setPlans] = useState<PlanOption[]>([]);
   const [payments, setPayments] = useState<PaymentMethodOption[]>([]);
-  const isSuperAdmin = useSyncExternalStore(() => () => {}, readSuperAdmin, () => false);
-
-  const loadRows = useCallback(async () => {
-    setLoading(true);
-    try {
-      const result = await fetchSubscriptionRows("subscriptions", page, ITEMS_PER_PAGE, debouncedSearch);
-      setRows(result.data as TenantSubscriptionDto[]);
-      setTotal(result.total);
-    } catch (error) { toast.error(error instanceof Error ? error.message : "Gagal mengambil langganan"); }
-    finally { setLoading(false); }
-  }, [debouncedSearch, page]);
 
   const loadOptions = useCallback(async () => {
     try {
-      const data = await fetchSubscriptionOptions();
-      setTenants(data.tenants); setPlans(data.plans); setPayments(data.payments);
-    } catch (error) { toast.error(error instanceof Error ? error.message : "Gagal mengambil pilihan data"); }
+      const options = await fetchSubscriptionOptions();
+      setTenants(options.tenants);
+      setPlans(options.plans);
+      setPayments(options.payments);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Gagal mengambil pilihan data");
+    }
   }, []);
 
-  useEffect(() => { const timeout = window.setTimeout(() => setDebouncedSearch(search), 400); return () => window.clearTimeout(timeout); }, [search]);
-  useEffect(() => { setPage(1); }, [debouncedSearch]);
-  useEffect(() => { if (isSuperAdmin) void loadRows(); }, [isSuperAdmin, loadRows]);
-  useEffect(() => { if (isSuperAdmin) void loadOptions(); }, [isSuperAdmin, loadOptions]);
+  useEffect(() => {
+    if (!management.isSuperAdmin) return;
 
-  const toolbar = useMemo(() => headerToolbar({ label: "Langganan", onAdd: () => { setSelected(undefined); setDialogOpen(true); }, showFilter, setShowFilter, search, setSearch }), [search, showFilter]);
-  const actions = (row: TenantSubscriptionDto) => renderManagementActions({ row, onEdit: (item) => { setSelected(item); setDialogOpen(true); }, onDelete: handleDelete, deleteId, setDeleteId, deleteLabel: "Langganan" });
+    let cancelled = false;
+    void fetchSubscriptionOptions()
+      .then((options) => {
+        if (cancelled) return;
+        setTenants(options.tenants);
+        setPlans(options.plans);
+        setPayments(options.payments);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          toast.error(error instanceof Error ? error.message : "Gagal mengambil pilihan data");
+        }
+      });
 
-  async function handleDelete(id: string) {
-    try { await deleteSubscriptionRow("subscriptions", id); toast.success("Langganan berhasil dihapus"); setDeleteId(null); await loadRows(); }
-    catch (error) { toast.error(error instanceof Error ? error.message : "Gagal menghapus langganan"); }
-  }
+    return () => {
+      cancelled = true;
+    };
+  }, [management.isSuperAdmin]);
 
-  if (!isSuperAdmin) return <AccessDenied />;
-  return <>
-    <DynamicPage<TenantSubscriptionDto> toolbar={toolbar} columns={subscriptionColumns} items={rows} total={total} currentPage={page} totalPages={Math.max(1, Math.ceil(total / ITEMS_PER_PAGE))} loading={loading} emptyMessage="Belum ada langganan tenant" onPageChange={setPage} renderActions={actions} />
-    <ManagementDialog open={dialogOpen} tab="subscriptions" initialData={selected} tenants={tenants} plans={plans} payments={payments} onClose={() => { setDialogOpen(false); setSelected(undefined); }} onSuccess={() => { void loadRows(); void loadOptions(); }} />
-  </>;
+  const renderActions = (row: TenantSubscriptionDto) =>
+    <ManagementActions
+      row={row}
+      onEdit={management.openEditDialog}
+      onDelete={management.handleDelete}
+      deleteId={management.deleteId}
+      setDeleteId={management.setDeleteId}
+      deleteLabel="Langganan"
+    />;
+
+  if (!management.isSuperAdmin) return <ManagementAccessDenied />;
+
+  return (
+    <>
+      <DynamicPage<TenantSubscriptionDto>
+        toolbar={
+          <ManagementToolbar
+            label="Langganan"
+            onAdd={management.openCreateDialog}
+            showFilter={management.showFilter}
+            setShowFilter={management.setShowFilter}
+            search={management.search}
+            setSearch={management.setSearch}
+          />
+        }
+        columns={subscriptionColumns}
+        items={management.rows}
+        total={management.total}
+        currentPage={management.page}
+        totalPages={Math.max(1, Math.ceil(management.total / ITEMS_PER_PAGE))}
+        loading={management.loading}
+        emptyMessage="Belum ada langganan tenant"
+        onPageChange={management.setPage}
+        renderActions={renderActions}
+      />
+      <SubscriptionFormData
+        open={management.dialogOpen}
+        initialData={management.selected}
+        tenants={tenants}
+        plans={plans}
+        payments={payments}
+        onClose={management.closeDialog}
+        onSuccess={() => {
+          void management.loadRows();
+          void loadOptions();
+        }}
+      />
+    </>
+  );
 }
-
-function readSuperAdmin() { try { const user = JSON.parse(localStorage.getItem("hr_user_data") || "{}"); return String(user.role || user.roleName || "").toLowerCase().replace(/\s/g, "") === "superadmin"; } catch { return false; } }
-function AccessDenied() { return <div className="rounded-xl border bg-white p-6 text-sm text-red-500 dark:border-gray-700 dark:bg-gray-800">Halaman ini hanya dapat diakses oleh Super Admin.</div>; }

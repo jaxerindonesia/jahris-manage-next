@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useSyncExternalStore } from "react";
+import React, { useState, useRef } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useSearchParams, useRouter } from "next/navigation";
@@ -52,7 +52,7 @@ import {
   CreditCard,
 } from "lucide-react";
 import { usePermission } from "@/lib/helper/check-role";
-import { usePlanFeatures } from "@/lib/helper/client-session";
+import { useIsSuperAdmin, usePlanFeatures } from "@/lib/helper/client-session";
 import { hasPlanFeature } from "@/lib/auth/feature-access";
 
 type SidebarSubItem = {
@@ -119,26 +119,7 @@ export default function DesktopSidebar() {
     );
   };
 
-  const isSuperAdmin = useSyncExternalStore(
-    () => () => { },
-    () => {
-      const raw = localStorage.getItem("hr_user_data");
-      if (!raw) return false;
-
-      try {
-        const userData = JSON.parse(raw);
-        const rawRoleName =
-          typeof userData?.role === "string"
-            ? userData.role
-            : userData?.role?.name || userData?.roleName;
-        const roleName = rawRoleName?.toLowerCase().replace(/\s/g, "") || "";
-        return roleName === "superadmin";
-      } catch {
-        return false;
-      }
-    },
-    () => false,
-  );
+  const isSuperAdmin = useIsSuperAdmin();
 
   const handleLogout = async () => {
     try {

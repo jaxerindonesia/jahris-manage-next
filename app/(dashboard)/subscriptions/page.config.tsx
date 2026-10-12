@@ -1,7 +1,7 @@
 "use client";
 
 import type { DefaultColumnFormat } from "@/components/dynamic-page";
-import type { PaymentMethodDto, PlanDto, TenantSubscriptionDto } from "@/lib/dto/subscription";
+import type { TenantSubscriptionDto } from "@/lib/dto/subscription";
 import { formatDateId } from "@/lib/helper/date";
 import type React from "react";
 import { Edit, Filter, Plus, Trash2, X } from "lucide-react";
@@ -10,10 +10,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
-export const ITEMS_PER_PAGE = 10;
-const rupiah = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 });
-
 const badge = (label: string, active: boolean) => <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${active ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300" : "bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300"}`}>{label}</span>;
+
+export function ManagementAccessDenied() {
+  return (
+    <div className="rounded-xl border bg-white p-6 text-sm text-red-500 dark:border-gray-700 dark:bg-gray-800">
+      Halaman ini hanya dapat diakses oleh Super Admin.
+    </div>
+  );
+}
 
 type HeaderToolbarProps = {
   label: string;
@@ -24,7 +29,7 @@ type HeaderToolbarProps = {
   setSearch: React.Dispatch<React.SetStateAction<string>>;
 };
 
-export const headerToolbar = ({ label, onAdd, showFilter, setShowFilter, search, setSearch }: HeaderToolbarProps) => {
+export function ManagementToolbar({ label, onAdd, showFilter, setShowFilter, search, setSearch }: HeaderToolbarProps) {
   const activeCount = search.trim() ? 1 : 0;
   return <div>
     <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -40,9 +45,9 @@ export const headerToolbar = ({ label, onAdd, showFilter, setShowFilter, search,
       <div className="max-w-md"><Label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">Cari</Label><Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={`Cari ${label.toLowerCase()}...`} className="w-full rounded-lg border bg-white px-3 py-2 dark:border-gray-600 dark:bg-gray-700" /></div>
     </div>}
   </div>;
-};
+}
 
-export function renderManagementActions<T extends { id: string }>({ row, onEdit, onDelete, deleteId, setDeleteId, deleteLabel }: {
+export function ManagementActions<T extends { id: string }>({ row, onEdit, onDelete, deleteId, setDeleteId, deleteLabel }: {
   row: T;
   onEdit: (row: T) => void;
   onDelete: (id: string) => void;
@@ -60,42 +65,26 @@ export function renderManagementActions<T extends { id: string }>({ row, onEdit,
 }
 
 export const subscriptionColumns: DefaultColumnFormat<TenantSubscriptionDto>[] = [
-  { key: "tenant", title: "Tenant", formatter: (_value, row) => row.tenant?.companyName || "-" },
-  { key: "plan", title: "Plan", formatter: (_value, row) => row.plan ? `${row.plan.name} (${row.plan.type === "MONTHLY" ? "Bulanan" : "Tahunan"})` : "-" },
+  {
+    key: "tenant",
+    title: "Tenant",
+    formatter: (_value, row) => row.tenant?.companyName || "-",
+  },
+  {
+    key: "plan",
+    title: "Plan",
+    formatter: (_value, row) =>
+      row.plan
+        ? `${row.plan.name} (${row.plan.type === "MONTHLY" ? "Bulanan" : "Tahunan"})`
+        : "-",
+  },
   { key: "startDate", title: "Mulai", formatter: (value) => formatDateId(String(value)) },
   { key: "endDate", title: "Berakhir", formatter: (value) => formatDateId(String(value)) },
-  { key: "paymentMethod", title: "Pembayaran", formatter: (_value, row) => row.paymentMethod ? `${row.paymentMethod.name} - ${row.paymentMethod.provider}` : "-" },
-  { key: "status", title: "Status", formatter: (value) => badge(String(value), value === "ACTIVE") },
-];
-
-export const planColumns: DefaultColumnFormat<PlanDto>[] = [
-  { key: "name", title: "Nama Plan" },
-  { key: "type", title: "Periode", formatter: (value) => value === "MONTHLY" ? "Bulanan" : "Tahunan" },
-  { key: "price", title: "Harga / Karyawan", formatter: (value) => value === null ? "Custom Pricing" : rupiah.format(Number(value)) },
   {
-    key: "featurePermission",
-    title: "Fitur",
-    formatter: (value) => {
-      if (!Array.isArray(value)) return "-";
-      if (value.includes("*")) return "Semua fitur";
-      return `${value.length} fitur`;
-    },
+    key: "paymentMethod",
+    title: "Pembayaran",
+    formatter: (_value, row) =>
+      row.paymentMethod ? `${row.paymentMethod.name} - ${row.paymentMethod.provider}` : "-",
   },
-  { key: "isActive", title: "Status", formatter: (value) => badge(value ? "Aktif" : "Nonaktif", Boolean(value)) },
-];
-
-export const paymentMethodColumns: DefaultColumnFormat<PaymentMethodDto>[] = [
-  { key: "name", title: "Nama" },
-  { key: "code", title: "Code" },
-  { key: "provider", title: "Provider" },
-  { key: "category", title: "Kategori", formatter: (value) => String(value).replaceAll("_", " ") },
-  { key: "feeType", title: "Biaya", formatter: (_value, row) => {
-    const fixed = Number(row.feeFixed);
-    const percentage = Number(row.feePercentage);
-    if (row.feeType === "fixed") return rupiah.format(fixed);
-    if (row.feeType === "percentage") return `${percentage}%`;
-    return `${rupiah.format(fixed)} + ${percentage}%`;
-  } },
-  { key: "sortOrder", title: "Urutan" },
-  { key: "isActive", title: "Status", formatter: (value) => badge(value ? "Aktif" : "Nonaktif", Boolean(value)) },
+  { key: "status", title: "Status", formatter: (value) => badge(String(value), value === "ACTIVE") },
 ];

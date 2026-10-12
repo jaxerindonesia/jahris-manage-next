@@ -1,13 +1,13 @@
 "use client";
 
-import { startTransition, useState, useEffect, useRef, useSyncExternalStore } from "react";
+import { startTransition, useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "@/contexts/ThemeContext";
 import { usePermission } from "@/lib/helper/check-role";
 import { useTenantConfig } from "@/contexts/TenantConfigContext";
-import { usePlanFeatures } from "@/lib/helper/client-session";
+import { useIsSuperAdmin, usePlanFeatures } from "@/lib/helper/client-session";
 import { hasPlanFeature } from "@/lib/auth/feature-access";
 import {
   LayoutDashboard,
@@ -54,18 +54,7 @@ export default function MobileNavbar() {
     theme === "dark"
       ? tenantConfig?.logoDarkUrl || tenantConfig?.logoUrl
       : tenantConfig?.logoUrl || tenantConfig?.logoDarkUrl;
-  const isSuperAdmin = useSyncExternalStore(
-    () => () => {},
-    () => {
-      try {
-        const user = JSON.parse(localStorage.getItem("hr_user_data") || "{}");
-        return String(user.role || user.roleName || "").toLowerCase().replace(/\s/g, "") === "superadmin";
-      } catch {
-        return false;
-      }
-    },
-    () => false,
-  );
+  const isSuperAdmin = useIsSuperAdmin();
 
   // Easter egg states
   const [showCredits, setShowCredits] = useState(false);
