@@ -2,7 +2,15 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import * as faceapi from "face-api.js";
-import { X, Camera, CheckCircle, XCircle, Loader2, ScanFace } from "lucide-react";
+import {
+  X,
+  Camera,
+  CheckCircle,
+  XCircle,
+  Loader2,
+  RotateCcw,
+  ScanFace,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ensureFaceModelLoaded } from "@/lib/helper/face-models";
 import { parseFaceDescriptor } from "@/lib/helper/face-descriptor";
@@ -11,6 +19,14 @@ import {
   loadAndCacheFaceDescriptor,
 } from "@/lib/helper/face-reference-cache";
 import { reportFacePerformance } from "@/lib/helper/face-performance";
+import {
+  attachCameraStream,
+  isIOSWebKit,
+  isRetryableCameraError,
+  releaseCameraStream,
+} from "@/lib/helper/camera-stream";
+
+const CAMERA_START_ATTEMPTS = 3;
 
 interface FaceRecognitionModalProps {
   isOpen: boolean;
@@ -24,6 +40,7 @@ interface FaceRecognitionModalProps {
 type ScanStatus =
   | "loading-models"
   | "loading-reference"
+  | "starting-camera"
   | "scanning"
   | "position-required"
   | "movement-required"
@@ -62,7 +79,8 @@ export default function FaceRecognitionModal({
 
   const [status, setStatus] = useState<ScanStatus>("loading-models");
   const [matchScore, setMatchScore] = useState<number | null>(null);
-  const [modelsLoaded, setModelsLoaded] = useState(false);
+  const [cameraRestartKey, setCameraRestartKey] = useState(0);
+  const [cameraErrorMessage, setCameraErrorMessage] = useState("");
   const [showStartupSplash, setShowStartupSplash] = useState(false);
   const startupSplashDoneRef = useRef(false);
   const splashTimersRef = useRef<{
@@ -78,15 +96,14 @@ export default function FaceRecognitionModal({
       clearTimeout(timeoutRef.current);
       timeoutRef.current = null;
     }
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((t) => t.stop());
-      streamRef.current = null;
-    }
+    releaseCameraStream(videoRef.current, streamRef.current);
+    streamRef.current = null;
   }, []);
 
   const getCaptureDataUrl = useCallback(() => {
     if (!videoRef.current) return "";
     const video = videoRef.current;
+    if (!video.videoWidth || !video.videoHeight) return "";
     const maxWidth = 480;
     const scale = Math.min(1, maxWidth / video.videoWidth);
     const snapshotCanvas = document.createElement("canvas");
@@ -111,7 +128,18 @@ export default function FaceRecognitionModal({
     movementStartedAtRef.current = 0;
     setStatus("loading-models");
     setMatchScore(null);
+    setCameraErrorMessage("");
   }, [stopCamera]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -155,29 +183,24 @@ export default function FaceRecognitionModal({
   }, [isOpen]);
 
   useEffect(() => {
-    if (modelsLoaded) return;
-    const load = async () => {
-      try {
-        await ensureFaceModelLoaded("attendance-recognition", [
-          () => faceapi.nets.tinyFaceDetector.loadFromUri("/models"),
-          () => faceapi.nets.faceLandmark68Net.loadFromUri("/models"),
-          () => faceapi.nets.faceRecognitionNet.loadFromUri("/models"),
-        ]);
-        setModelsLoaded(true);
-      } catch {
-        setStatus("error");
-      }
-    };
-    load();
-  }, [modelsLoaded]);
+    void ensureFaceModelLoaded("attendance-recognition", [
+      () => faceapi.nets.tinyFaceDetector.loadFromUri("/models"),
+      () => faceapi.nets.faceLandmark68Net.loadFromUri("/models"),
+      () => faceapi.nets.faceRecognitionNet.loadFromUri("/models"),
+    ]).catch(() => setStatus("error"));
+  }, []);
 
   useEffect(() => {
     if (!isOpen) return;
-    if (!modelsLoaded) return;
 
     let cancelled = false;
 
     const run = async () => {
+      const loadModels = ensureFaceModelLoaded("attendance-recognition", [
+        () => faceapi.nets.tinyFaceDetector.loadFromUri("/models"),
+        () => faceapi.nets.faceLandmark68Net.loadFromUri("/models"),
+        () => faceapi.nets.faceRecognitionNet.loadFromUri("/models"),
+      ]);
       const referenceKey = referenceImageUrl ?? "stored-descriptor";
       if (referenceKeyRef.current !== referenceKey) {
         referenceDescriptorRef.current = null;
@@ -216,55 +239,123 @@ export default function FaceRecognitionModal({
 
       const startCamera = async () => {
         const startedAt = performance.now();
-        try {
-          const stream = await navigator.mediaDevices.getUserMedia({
-            video: {
-              facingMode: { ideal: "user" },
-              width: { ideal: 640 },
-              height: { ideal: 480 },
-              frameRate: { ideal: 30, max: 30 },
-              aspectRatio: { ideal: 4 / 3 },
-            },
-          });
-          if (cancelled) {
-            stream.getTracks().forEach((t) => t.stop());
-            return null;
-          }
+        let lastError: unknown = null;
 
-          streamRef.current = stream;
-
-          const videoTrack = stream.getVideoTracks()[0];
-          if (videoTrack && typeof videoTrack.getCapabilities === "function") {
-            const capabilities = videoTrack.getCapabilities() as MediaTrackCapabilities & {
-              zoom?: { min: number; max: number; step: number };
-            };
-            const minimumZoom = capabilities.zoom?.min;
-
-            if (typeof minimumZoom === "number" && Number.isFinite(minimumZoom)) {
-              try {
-                await videoTrack.applyConstraints({
-                  advanced: [{ zoom: minimumZoom } as MediaTrackConstraintSet],
-                });
-              } catch {
-                // Keep the camera's default zoom when the device rejects the constraint.
-              }
-            }
-          }
-
-          if (videoRef.current) {
-            videoRef.current.srcObject = stream;
-            await videoRef.current.play();
-          }
-          return performance.now() - startedAt;
-        } catch {
-          if (!cancelled) setStatus("no-camera");
+        if (!navigator.mediaDevices?.getUserMedia) {
+          setCameraErrorMessage("Browser ini tidak mendukung akses kamera.");
+          setStatus("no-camera");
           return null;
         }
+
+        for (let attempt = 0; attempt < CAMERA_START_ATTEMPTS; attempt += 1) {
+          if (cancelled) return null;
+
+          let stream: MediaStream | null = null;
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({
+              audio: false,
+              video:
+                attempt === 0
+                  ? {
+                      facingMode: { ideal: "user" },
+                      width: { ideal: 640 },
+                      height: { ideal: 480 },
+                      frameRate: { ideal: 30, max: 30 },
+                      aspectRatio: { ideal: 4 / 3 },
+                    }
+                  : { facingMode: "user" },
+            });
+            if (cancelled) {
+              releaseCameraStream(videoRef.current, stream);
+              return null;
+            }
+
+            streamRef.current = stream;
+            const video = videoRef.current;
+            if (!video) throw new Error("Camera preview is unavailable");
+
+            await attachCameraStream(video, stream);
+            if (cancelled) {
+              releaseCameraStream(video, stream);
+              return null;
+            }
+
+            const videoTrack = stream.getVideoTracks()[0];
+            // Applying hardware zoom can leave an otherwise-live stream black on
+            // iOS WebKit. The unmodified front camera is also the desired framing.
+            if (
+              !isIOSWebKit() &&
+              videoTrack &&
+              typeof videoTrack.getCapabilities === "function"
+            ) {
+              const capabilities = videoTrack.getCapabilities() as MediaTrackCapabilities & {
+                zoom?: { min: number; max: number; step: number };
+              };
+              const minimumZoom = capabilities.zoom?.min;
+
+              if (typeof minimumZoom === "number" && Number.isFinite(minimumZoom)) {
+                try {
+                  await videoTrack.applyConstraints({
+                    advanced: [{ zoom: minimumZoom } as MediaTrackConstraintSet],
+                  });
+                } catch {
+                  // Keep the camera default when optional zoom is unsupported.
+                }
+              }
+            }
+
+            setCameraErrorMessage("");
+            return performance.now() - startedAt;
+          } catch (error) {
+            lastError = error;
+            releaseCameraStream(videoRef.current, stream);
+            if (streamRef.current === stream) streamRef.current = null;
+
+            if (
+              cancelled ||
+              !isRetryableCameraError(error) ||
+              attempt === CAMERA_START_ATTEMPTS - 1
+            ) {
+              break;
+            }
+
+            await new Promise((resolve) =>
+              window.setTimeout(resolve, 250 * (attempt + 1)),
+            );
+            if (cancelled) return null;
+          }
+        }
+
+        if (!cancelled) {
+          const errorName = lastError instanceof DOMException ? lastError.name : "";
+          setCameraErrorMessage(
+            errorName === "NotAllowedError" || errorName === "SecurityError"
+              ? "Izin kamera ditolak. Izinkan kamera di pengaturan Safari lalu coba lagi."
+              : errorName === "NotFoundError"
+                ? "Kamera depan tidak ditemukan pada perangkat ini."
+                : "Kamera belum berhasil dimulai. Tekan Coba Lagi.",
+          );
+          setStatus("no-camera");
+        }
+        return null;
       };
 
-      if (referenceDescriptorRef.current) setStatus("scanning");
+      setStatus("starting-camera");
       const referenceStartedAt = performance.now();
-      const [, cameraMs] = await Promise.all([loadReference(), startCamera()]);
+      let cameraMs: number | null;
+      try {
+        const [, cameraResult] = await Promise.all([
+          loadModels.then(loadReference),
+          startCamera(),
+        ]);
+        cameraMs = cameraResult;
+      } catch {
+        if (!cancelled) {
+          setStatus("error");
+          stopCamera();
+        }
+        return;
+      }
       const referenceMs = performance.now() - referenceStartedAt;
 
       if (cancelled) return;
@@ -284,7 +375,17 @@ export default function FaceRecognitionModal({
         return;
       }
 
-      if (cameraMs === null) return;
+      if (cameraMs === null) {
+        reportFacePerformance({
+          event: "failure",
+          mode,
+          descriptorSource,
+          totalMs: performance.now() - modalOpenedAtRef.current,
+          referenceMs,
+          reason: "camera-unavailable",
+        });
+        return;
+      }
       setStatus("scanning");
       reportFacePerformance({
         event: "ready",
@@ -499,7 +600,7 @@ export default function FaceRecognitionModal({
       cancelled = true;
       cleanup();
     };
-  }, [isOpen, mode, modelsLoaded, referenceDescriptor, referenceImageUrl, onSuccess, cleanup, getCaptureDataUrl, stopCamera]);
+  }, [cameraRestartKey, isOpen, mode, referenceDescriptor, referenceImageUrl, onSuccess, cleanup, getCaptureDataUrl, stopCamera]);
 
   if (!isOpen) return null;
 
@@ -514,6 +615,11 @@ export default function FaceRecognitionModal({
     },
     "loading-reference": {
       label: "Memuat foto referensi...",
+      color: "text-blue-400",
+      icon: <Loader2 className="w-5 h-5 animate-spin" />,
+    },
+    "starting-camera": {
+      label: "Menyiapkan kamera dan AI...",
       color: "text-blue-400",
       icon: <Loader2 className="w-5 h-5 animate-spin" />,
     },
@@ -563,7 +669,7 @@ export default function FaceRecognitionModal({
       icon: <XCircle className="w-5 h-5" />,
     },
     "no-camera": {
-      label: "Kamera tidak tersedia",
+      label: cameraErrorMessage || "Kamera tidak tersedia",
       color: "text-red-400",
       icon: <XCircle className="w-5 h-5" />,
     },
@@ -580,8 +686,8 @@ export default function FaceRecognitionModal({
           : "Break Check Out";
   const shouldSuppressStatusUi = showStartupSplash;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 sm:p-6">
-      <div className="relative bg-gray-900 rounded-2xl shadow-2xl border border-gray-700 w-full max-w-[95%] sm:max-w-md md:max-w-lg overflow-hidden transition-all duration-300">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/70 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur-sm sm:items-center sm:p-6">
+      <div className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-gray-700 bg-gray-900 shadow-2xl sm:max-w-md md:max-w-lg">
         <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-700">
           <div className="flex items-center gap-2">
             <ScanFace className="w-5 h-5 text-indigo-400" />
@@ -597,10 +703,10 @@ export default function FaceRecognitionModal({
           </button>
         </div>
 
-        <div className="relative aspect-[4/5] overflow-hidden bg-black sm:aspect-[4/3]">
+        <div className="relative isolate aspect-[4/5] w-full overflow-hidden bg-black sm:aspect-[4/3]">
           <video
             ref={videoRef}
-            className="absolute inset-0 block min-h-full min-w-full object-cover object-center"
+            className="absolute inset-0 block h-full w-full object-contain object-center"
             style={{
               width: "100%",
               height: "100%",
@@ -673,7 +779,7 @@ export default function FaceRecognitionModal({
             </div>
           )}
 
-          {!shouldSuppressStatusUi && (status === "loading-models" || status === "loading-reference") && (
+          {!shouldSuppressStatusUi && (status === "loading-models" || status === "loading-reference" || status === "starting-camera") && (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900/90 gap-3">
               <Loader2 className="w-10 h-10 text-indigo-400 animate-spin" />
               <p className="text-gray-300 text-sm">{cfg.label}</p>
@@ -684,6 +790,17 @@ export default function FaceRecognitionModal({
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900/95 gap-3">
               <Camera className="w-12 h-12 text-gray-500" />
               <p className="text-gray-400 text-sm text-center px-6">{cfg.label}</p>
+              {status === "no-camera" && (
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => setCameraRestartKey((current) => current + 1)}
+                  className="gap-2"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                  Coba Lagi
+                </Button>
+              )}
             </div>
           )}
         </div>
