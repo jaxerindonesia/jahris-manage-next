@@ -6,11 +6,8 @@ export function ensureFaceModelLoaded(key: string, loaders: ModelLoader[]) {
   const existing = modelLoaders.get(key);
   if (existing) return existing;
 
-  const promise = loaders
-    .reduce<Promise<void>>(
-      (sequence, loader) => sequence.then(async () => { await loader(); }),
-      Promise.resolve(),
-    )
+  const promise = Promise.all(loaders.map((loader) => loader()))
+    .then(() => undefined)
     .catch((error) => {
       modelLoaders.delete(key);
       throw error;
