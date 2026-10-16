@@ -82,6 +82,9 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  outputFileTracingIncludes: {
+    "/api/face-recognition/verify": ["./public/models/**/*"],
+  },
   turbopack: {
     root: process.cwd(),
   },

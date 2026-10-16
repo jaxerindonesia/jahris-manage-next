@@ -12,9 +12,7 @@ import ExportPeriodDialog from "@/components/export-period-dialog";
 import type { AttendanceExportPeriod } from "./types";
 import type { AttendanceOvertimeDto } from "@/lib/dto/attendance-overtime";
 import OvertimeConfirmationDialog from "./components/overtime-confirmation-dialog";
-import { ensureFaceModelLoaded } from "@/lib/helper/face-models";
 import FaceRecognitionModal from "./components/face-recognition-modal";
-import { loadAndCacheFaceDescriptor } from "@/lib/helper/face-reference-cache";
 import ModalAttendanceConfig from "./components/modal-attendance-config";
 import DynamicPage from "@/components/dynamic-page";
 import { getColumnFormats, headerToolbar, ITEMS_PER_PAGE, renderActions, STATUS_LABEL } from "./page.config";
@@ -87,9 +85,7 @@ export default function Page() {
   const [userData, setUserData] = useState<{
     id: string;
     role: string;
-    avatarUrl: string;
-    faceDescriptor: number[] | null;
-  }>({ id: "", role: "", avatarUrl: "", faceDescriptor: null });
+  }>({ id: "", role: "" });
   const [todayAttendance, setTodayAttendance] = useState<AttendanceDto | null>(null);
   const recentGeoPositionRef = useRef<RecentGeoPosition | null>(null);
 
@@ -115,6 +111,7 @@ export default function Page() {
   // Face recognition modal state
   const [isFaceModalOpen, setIsFaceModalOpen] = useState(false);
   const [faceModalMode, setFaceModalMode] = useState<"check-in" | "check-out" | "break-in" | "break-out">("check-in");
+  const [faceCameraPreparing, setFaceCameraPreparing] = useState(false);
 
   const isAdmin = ["Super Admin", "Admin"].includes(userData.role);
 
@@ -539,7 +536,7 @@ export default function Page() {
   }, []);
 
   // ── Raw check-in / check-out (called after face verified) ──────────────
-  const doCheckIn = useCallback(async (faceCaptureBase64: string) => {
+  const doCheckIn = useCallback(async (faceCaptureBase64: string, faceVerificationToken: string) => {
     try {
       if (!navigator.geolocation) {
         toast.error("Perangkat ini tidak mendukung akses lokasi");
@@ -597,6 +594,7 @@ export default function Page() {
           userId: userData.id,
           checkInLocation: { latitude, longitude, accuracy },
           faceCaptureBase64,
+          faceVerificationToken,
         }),
       });
 
@@ -626,7 +624,7 @@ export default function Page() {
     }
   }, [userData, fetchAttendance, getRecentLocation]);
 
-  const doCheckOut = useCallback(async (faceCaptureBase64: string) => {
+  const doCheckOut = useCallback(async (faceCaptureBase64: string, faceVerificationToken: string) => {
     try {
       if (!navigator.geolocation) {
         toast.error("Perangkat ini tidak mendukung akses lokasi");
@@ -684,6 +682,7 @@ export default function Page() {
           userId: userData.id,
           checkOutLocation: { latitude, longitude, accuracy },
           faceCaptureBase64,
+          faceVerificationToken,
         }),
       });
       if (!res.ok) {
@@ -729,7 +728,7 @@ export default function Page() {
     return { latitude, longitude, accuracy };
   }, [getRecentLocation]);
 
-  const doBreakCheckIn = useCallback(async (faceCaptureBase64?: string | null) => {
+  const doBreakCheckIn = useCallback(async (faceCaptureBase64?: string | null, faceVerificationToken?: string) => {
     try {
       const location = await getBreakLocation();
       const res = await fetch("/api/attendances/break-check-in", {
@@ -739,6 +738,7 @@ export default function Page() {
           userId: userData.id,
           breakInLocation: location,
           faceCaptureBase64,
+          faceVerificationToken,
         }),
       });
 
@@ -756,7 +756,7 @@ export default function Page() {
     }
   }, [userData, fetchAttendance, fetchTodayAttendance, getBreakLocation]);
 
-  const doBreakCheckOut = useCallback(async (faceCaptureBase64?: string | null) => {
+  const doBreakCheckOut = useCallback(async (faceCaptureBase64?: string | null, faceVerificationToken?: string) => {
     try {
       const location = await getBreakLocation();
       const res = await fetch("/api/attendances/break-check-out", {
@@ -766,6 +766,7 @@ export default function Page() {
           userId: userData.id,
           breakOutLocation: location,
           faceCaptureBase64,
+          faceVerificationToken,
         }),
       });
 
@@ -818,20 +819,20 @@ export default function Page() {
     doBreakCheckOut();
   }, [attendanceConfig.breakFaceCaptureEnabled, doBreakCheckOut]);
 
-  const handleFaceSuccess = useCallback((captureDataUrl: string) => {
-    if (!captureDataUrl) {
+  const handleFaceSuccess = useCallback((captureDataUrl: string, faceVerificationToken: string) => {
+    if (!captureDataUrl || !faceVerificationToken) {
       toast.error("Gagal mengambil bukti foto, silakan ulangi scan wajah");
       return;
     }
     setIsFaceModalOpen(false);
     if (faceModalMode === "check-in") {
-      doCheckIn(captureDataUrl);
+      doCheckIn(captureDataUrl, faceVerificationToken);
     } else if (faceModalMode === "check-out") {
-      doCheckOut(captureDataUrl);
+      doCheckOut(captureDataUrl, faceVerificationToken);
     } else if (faceModalMode === "break-in") {
-      doBreakCheckIn(captureDataUrl);
+      doBreakCheckIn(captureDataUrl, faceVerificationToken);
     } else {
-      doBreakCheckOut(captureDataUrl);
+      doBreakCheckOut(captureDataUrl, faceVerificationToken);
     }
   }, [faceModalMode, doCheckIn, doCheckOut, doBreakCheckIn, doBreakCheckOut]);
 
@@ -872,6 +873,7 @@ export default function Page() {
         },
         attendance: {
           attendanceConfig,
+          faceCameraPreparing,
           currentDateLabel,
           currentTime,
           hasBreakSession,
@@ -896,6 +898,7 @@ export default function Page() {
     [
       activeFilterCount,
       attendanceConfig,
+      faceCameraPreparing,
       checkRole,
       clearFilters,
       currentDateLabel,
@@ -942,35 +945,8 @@ export default function Page() {
     setUserData({
       id: data.id || "",
       role: data.role || "",
-      avatarUrl: data.avatarUrl || data.avatar_url || "",
-      faceDescriptor: Array.isArray(data.faceDescriptor) ? data.faceDescriptor : null,
     });
   }, []);
-
-  useEffect(() => {
-    if (!userData.avatarUrl || userData.faceDescriptor) return;
-
-    const warmLegacyReference = async () => {
-      try {
-        await ensureFaceModelLoaded("attendance-recognition", [
-          () => import("face-api.js").then((faceapi) =>
-            faceapi.nets.tinyFaceDetector.loadFromUri("/models"),
-          ),
-          () => import("face-api.js").then((faceapi) =>
-            faceapi.nets.faceLandmark68Net.loadFromUri("/models"),
-          ),
-          () => import("face-api.js").then((faceapi) =>
-            faceapi.nets.faceRecognitionNet.loadFromUri("/models"),
-          ),
-        ]);
-        await loadAndCacheFaceDescriptor(userData.avatarUrl);
-      } catch {
-        // Modal tetap memiliki fallback dan pesan error jika pemanasan gagal.
-      }
-    };
-
-    void warmLegacyReference();
-  }, [userData.avatarUrl, userData.faceDescriptor]);
 
   useEffect(() => {
     refreshLocationReadiness();
@@ -984,36 +960,6 @@ export default function Page() {
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [refreshLocationReadiness]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const preload = () => {
-      void ensureFaceModelLoaded("attendance-recognition", [
-        () => import("face-api.js").then((faceapi) =>
-          faceapi.nets.tinyFaceDetector.loadFromUri("/models"),
-        ),
-        () => import("face-api.js").then((faceapi) =>
-          faceapi.nets.faceLandmark68Net.loadFromUri("/models"),
-        ),
-        () => import("face-api.js").then((faceapi) =>
-          faceapi.nets.faceRecognitionNet.loadFromUri("/models"),
-        ),
-      ]);
-    };
-
-    const idle = window.requestIdleCallback
-      ? window.requestIdleCallback(preload, { timeout: 1500 })
-      : window.setTimeout(preload, 250);
-
-    return () => {
-      if (typeof idle === "number") {
-        window.clearTimeout(idle);
-      } else if ("cancelIdleCallback" in window) {
-        window.cancelIdleCallback(idle);
-      }
-    };
-  }, []);
 
   useEffect(() => {
     const updateTime = () => {
@@ -1074,10 +1020,12 @@ export default function Page() {
       <FaceRecognitionModal
         isOpen={isFaceModalOpen}
         mode={faceModalMode}
-        referenceImageUrl={userData.avatarUrl || null}
-        referenceDescriptor={userData.faceDescriptor}
         onSuccess={handleFaceSuccess}
-        onClose={() => setIsFaceModalOpen(false)}
+        onCameraPreparingChange={setFaceCameraPreparing}
+        onClose={() => {
+          setFaceCameraPreparing(false);
+          setIsFaceModalOpen(false);
+        }}
       />
 
       {checkRole("attendances", "set-config") && (

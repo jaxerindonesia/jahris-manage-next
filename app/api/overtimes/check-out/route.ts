@@ -10,6 +10,7 @@ import { BUCKET_AVATARS, deleteFromMinio, uploadBase64ToMinio, uploadBufferToMin
 import { completeOvertime } from "@/lib/helper/complete-overtime";
 import { buildTenantStorageObjectName } from "@/lib/helper/storage";
 import { validateAttachmentBuffer, validateBase64Image } from "@/lib/security/file-validation";
+import { verifyFaceVerificationToken } from "@/lib/server/face-verification-token";
 
 export async function POST(req: Request) {
   const uploadedUrls: string[] = [];
@@ -22,6 +23,7 @@ export async function POST(req: Request) {
     const overtimeId = String(formData.get("overtimeId") || "").trim();
     const userId = String(formData.get("userId") || "").trim();
     const faceCaptureBase64 = String(formData.get("faceCaptureBase64") || "");
+    const faceVerificationToken = String(formData.get("faceVerificationToken") || "");
     const checkOutLocationRaw = String(formData.get("checkOutLocation") || "");
     const file = formData.get("file") as File | null;
     const canManageOvertimes = hasPermission(auth.user, "overtimes", "update");
@@ -50,11 +52,18 @@ export async function POST(req: Request) {
     if (!canManageOvertimes && userId !== auth.user.id) {
       return NextResponse.json({ message: "Forbidden" }, { status: 403 });
     }
+    const targetUserId = canManageOvertimes ? userId : auth.user.id;
+    if (!verifyFaceVerificationToken(faceVerificationToken, targetUserId, "check-out")) {
+      return NextResponse.json(
+        { message: "Verifikasi wajah tidak valid atau sudah kedaluwarsa" },
+        { status: 401 },
+      );
+    }
 
     const overtime = await prisma.overtime.findFirst({
       where: {
         id: overtimeId,
-        userId: canManageOvertimes ? userId : auth.user.id,
+        userId: targetUserId,
         ...(scopedTenantId ? { tenantId: scopedTenantId } : {}),
       },
       select: {
