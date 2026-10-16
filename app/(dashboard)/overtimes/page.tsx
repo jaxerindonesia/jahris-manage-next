@@ -55,8 +55,6 @@ export default function Page() {
   const [savedApproverUserIds, setSavedApproverUserIds] = useState<string[]>([]);
   const [draftApproverUserIds, setDraftApproverUserIds] = useState<string[]>([]);
   const [userId, setUserId] = useState("");
-  const [userAvatarUrl, setUserAvatarUrl] = useState("");
-  const [userFaceDescriptor, setUserFaceDescriptor] = useState<number[] | null>(null);
   const [currentOvertime, setCurrentOvertime] = useState<OvertimeDto | null>(null);
   const [approvingItem, setApprovingItem] = useState<OvertimeDto | null>(null);
   const [approvePayMethod, setApprovePayMethod] = useState<"PER_HOUR" | "PER_DAY">("PER_HOUR");
@@ -69,6 +67,7 @@ export default function Page() {
   const [faceModalMode, setFaceModalMode] = useState<"check-in" | "check-out">("check-in");
   const [checkoutItem, setCheckoutItem] = useState<OvertimeDto | undefined>(undefined);
   const [checkingAction, setCheckingAction] = useState(false);
+  const [faceCameraPreparing, setFaceCameraPreparing] = useState(false);
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / ITEMS_PER_PAGE)), [total]);
 
@@ -219,6 +218,7 @@ export default function Page() {
         },
         overtime: {
           currentOvertime,
+          faceCameraPreparing,
         },
         filters: {
           show: showFilterPanel,
@@ -235,7 +235,7 @@ export default function Page() {
           setEndDate: setFilterEndDate,
         },
       }),
-    [activeFilterCount, checkRole, clearFilters, currentOvertime, filterEndDate, filterStartDate, filterStatus, handleCheckIn, handleCheckOut, isExporting, onAdd, savedApproverUserIds, savedConfig, searchTerm, showFilterPanel],
+    [activeFilterCount, checkRole, clearFilters, currentOvertime, faceCameraPreparing, filterEndDate, filterStartDate, filterStatus, handleCheckIn, handleCheckOut, isExporting, onAdd, savedApproverUserIds, savedConfig, searchTerm, showFilterPanel],
   );
 
   const onDelete = async (id: string) => {
@@ -544,16 +544,12 @@ export default function Page() {
   useEffect(() => {
     const userData = JSON.parse(localStorage.getItem("hr_user_data") || "{}");
     setUserId(userData.id || "");
-    setUserAvatarUrl(userData.avatarUrl || userData.avatar_url || "");
-    setUserFaceDescriptor(
-      Array.isArray(userData.faceDescriptor) ? userData.faceDescriptor : null,
-    );
     if (userData.id) {
       fetchCurrentOvertime(userData.id);
     }
   }, [fetchCurrentOvertime]);
 
-  const handleFaceModalSuccess = useCallback(async (captureDataUrl: string) => {
+  const handleFaceModalSuccess = useCallback(async (captureDataUrl: string, faceVerificationToken: string) => {
     if (!pendingCheckAction) return;
 
     setCheckingAction(true);
@@ -568,6 +564,7 @@ export default function Page() {
             overtimeId: pendingCheckAction.overtimeId,
             userId,
             faceCaptureBase64: captureDataUrl,
+            faceVerificationToken,
             checkInLocation: location,
           }),
         });
@@ -582,6 +579,7 @@ export default function Page() {
         fd.append("overtimeId", pendingCheckAction.overtimeId);
         fd.append("userId", userId);
         fd.append("faceCaptureBase64", captureDataUrl);
+        fd.append("faceVerificationToken", faceVerificationToken);
         fd.append("checkOutLocation", JSON.stringify(location));
         if (pendingCheckAction.proofFile) {
           fd.append("file", pendingCheckAction.proofFile);
@@ -713,10 +711,10 @@ export default function Page() {
       <FaceRecognitionModal
         isOpen={isFaceModalOpen}
         mode={faceModalMode}
-        referenceImageUrl={userAvatarUrl || null}
-        referenceDescriptor={userFaceDescriptor}
         onSuccess={handleFaceModalSuccess}
+        onCameraPreparingChange={setFaceCameraPreparing}
         onClose={() => {
+          setFaceCameraPreparing(false);
           setIsFaceModalOpen(false);
           setCheckingAction(false);
           setPendingCheckAction(null);

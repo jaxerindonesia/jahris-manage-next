@@ -8,6 +8,7 @@ import { hasPermission } from "@/lib/auth/permission";
 import { BUCKET_AVATARS, deleteFromMinio, uploadBase64ToMinio } from "@/lib/minio";
 import { buildTenantStorageObjectName } from "@/lib/helper/storage";
 import { validateBase64Image } from "@/lib/security/file-validation";
+import { verifyFaceVerificationToken } from "@/lib/server/face-verification-token";
 
 function formatJakartaDate(value: Date) {
   return new Intl.DateTimeFormat("en-CA", {
@@ -29,6 +30,7 @@ export async function POST(req: Request) {
     const overtimeId = String(body.overtimeId || "").trim();
     const userId = String(body.userId || "").trim();
     const faceCaptureBase64 = String(body.faceCaptureBase64 || "");
+    const faceVerificationToken = String(body.faceVerificationToken || "");
     const checkInLocation = body.checkInLocation ?? null;
     const canManageOvertimes = hasPermission(auth.user, "overtimes", "update");
     const scopedTenantId = ensureTenantScope(auth.user);
@@ -56,11 +58,18 @@ export async function POST(req: Request) {
     if (!canManageOvertimes && userId !== auth.user.id) {
       return NextResponse.json({ message: "Forbidden" }, { status: 403 });
     }
+    const targetUserId = canManageOvertimes ? userId : auth.user.id;
+    if (!verifyFaceVerificationToken(faceVerificationToken, targetUserId, "check-in")) {
+      return NextResponse.json(
+        { message: "Verifikasi wajah tidak valid atau sudah kedaluwarsa" },
+        { status: 401 },
+      );
+    }
 
     const overtime = await prisma.overtime.findFirst({
       where: {
         id: overtimeId,
-        userId: canManageOvertimes ? userId : auth.user.id,
+        userId: targetUserId,
         ...(scopedTenantId ? { tenantId: scopedTenantId } : {}),
       },
       select: {

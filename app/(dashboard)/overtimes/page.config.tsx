@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle, Download, Edit, ExternalLink, Filter, LogIn, LogOut, Plus, Settings, Trash2, X, XCircle } from "lucide-react";
+import { CheckCircle, Download, Edit, ExternalLink, Filter, Loader2, LogIn, LogOut, Plus, Settings, Trash2, X, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { DefaultColumnFormat } from "@/components/dynamic-page";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -49,6 +49,7 @@ interface HeaderToolbarProps {
     };
     overtime: {
         currentOvertime: OvertimeDto | null;
+        faceCameraPreparing: boolean;
     };
     filters: {
         show: boolean;
@@ -250,10 +251,11 @@ export const headerToolbar = ({ actions, overtime, filters }: HeaderToolbarProps
                     {overtime.currentOvertime?.status === "DRAFT" && formatJakartaDate(overtime.currentOvertime.overtimeDate) === getTodayJakartaDate() ? (
                         <Button
                             onClick={actions.onCheckIn}
+                            disabled={overtime.faceCameraPreparing}
                             className="flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-white transition-colors hover:bg-green-700"
                         >
-                            <LogIn className="h-4 w-4" />
-                            Check In
+                            {overtime.faceCameraPreparing ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />}
+                            {overtime.faceCameraPreparing ? "Menyiapkan..." : "Check In"}
                         </Button>
                     ) : overtime.currentOvertime?.status === "DRAFT" ? (
                         <Button disabled className="cursor-not-allowed bg-gray-400 text-white">
@@ -262,10 +264,11 @@ export const headerToolbar = ({ actions, overtime, filters }: HeaderToolbarProps
                     ) : overtime.currentOvertime?.status === "CHECKED_IN" ? (
                         <Button
                             onClick={actions.onCheckOut}
+                            disabled={overtime.faceCameraPreparing}
                             className="flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-white transition-colors hover:bg-red-700"
                         >
-                            <LogOut className="h-4 w-4" />
-                            Check Out
+                            {overtime.faceCameraPreparing ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogOut className="h-4 w-4" />}
+                            {overtime.faceCameraPreparing ? "Menyiapkan..." : "Check Out"}
                         </Button>
                     ) : null}
                 </>

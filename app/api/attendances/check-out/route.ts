@@ -10,6 +10,7 @@ import { buildTenantStorageObjectName } from "@/lib/helper/storage";
 import { validateBase64Image } from "@/lib/security/file-validation";
 import { haversineKm } from "@/lib/helper/attendance";
 import { getAttendanceOvertime } from "@/lib/helper/attendance-overtime";
+import { verifyFaceVerificationToken } from "@/lib/server/face-verification-token";
 
 export async function POST(req: NextRequest) {
   try {
@@ -19,7 +20,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const scopedTenantId = ensureTenantScope(auth.user);
     const finalTenantId = scopedTenantId ?? body.tenantId ?? null;
-    const { userId, checkOutLocation, faceCaptureBase64 } = body;
+    const { userId, checkOutLocation, faceCaptureBase64, faceVerificationToken } = body;
     const canManageAttendances = hasPermission(auth.user, "attendances", "update");
 
     if (!userId) {
@@ -42,6 +43,12 @@ export async function POST(req: NextRequest) {
     }
 
     const targetUserId = canManageAttendances ? userId : auth.user.id;
+    if (!verifyFaceVerificationToken(faceVerificationToken, targetUserId, "check-out")) {
+      return NextResponse.json(
+        { message: "Verifikasi wajah tidak valid atau sudah kedaluwarsa" },
+        { status: 401 },
+      );
+    }
 
     const attendance = await prisma.attendance.findFirst({
       where: {
