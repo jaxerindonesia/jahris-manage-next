@@ -9,6 +9,7 @@ import { hasPermission } from "@/lib/auth/permission";
 import { buildTenantStorageObjectName } from "@/lib/helper/storage";
 import { validateBase64Image } from "@/lib/security/file-validation";
 import { getBranchDistanceMeters } from "@/lib/helper/attendance";
+import { verifyFaceVerificationToken } from "@/lib/server/face-verification-token";
 
 function jsonError(message: string, status: number) {
   return NextResponse.json({ message }, { status });
@@ -33,7 +34,7 @@ export async function POST(req: NextRequest) {
     if (auth.error) return auth.error;
 
     const body = await req.json();
-    const { userId, breakInLocation, faceCaptureBase64 } = body;
+    const { userId, breakInLocation, faceCaptureBase64, faceVerificationToken } = body;
     if (!userId) return jsonError("UserId is required", 400);
 
     const canManageAttendances = hasPermission(auth.user, "attendances", "update");
@@ -86,6 +87,12 @@ export async function POST(req: NextRequest) {
 
     if (cfg.breakFaceCaptureEnabled && !faceCaptureBase64) {
       return jsonError("Foto break wajib diambil saat config aktif", 400);
+    }
+    if (
+      cfg.breakFaceCaptureEnabled &&
+      !verifyFaceVerificationToken(faceVerificationToken, targetUserId, "break-in")
+    ) {
+      return jsonError("Verifikasi wajah tidak valid atau sudah kedaluwarsa", 401);
     }
 
     if (faceCaptureBase64) {
