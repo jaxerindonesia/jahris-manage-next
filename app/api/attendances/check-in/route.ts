@@ -6,7 +6,7 @@ import prisma from "@/lib/prisma";
 import {
   BUCKET_AVATARS,
   deleteFromMinio,
-  uploadBase64ToMinio,
+  uploadBufferToMinio,
 } from "@/lib/minio";
 import { ensureTenantScope, requireSessionUser } from "@/lib/auth/tenant";
 import { hasPermission } from "@/lib/auth/permission";
@@ -32,6 +32,7 @@ function getErrorMessage(error: unknown) {
 }
 
 export async function POST(req: Request) {
+  const startedAt = performance.now();
   let uploadedFaceImage: string | null = null;
 
   try {
@@ -62,10 +63,22 @@ export async function POST(req: Request) {
       return jsonError("Verifikasi wajah tidak valid atau sudah kedaluwarsa", 401);
     }
 
-    const targetUser = await prisma.user.findFirst({
-      where: { id: targetUserId, ...(finalTenantId ? { tenantId: finalTenantId } : {}) },
-      include: { branch: true },
-    });
+    const now = new Date();
+    const objectFilename = `check-in-${randomUUID()}.${imageValidation.extension}`;
+    // These reads do not depend on each other. Running them together removes
+    // two serial database waits from the successful check-in path.
+    const [targetUser, schedule, checkInObjectName] = await Promise.all([
+      prisma.user.findFirst({
+        where: { id: targetUserId, ...(finalTenantId ? { tenantId: finalTenantId } : {}) },
+        include: { branch: true },
+      }),
+      resolveActiveWorkSchedule(prisma, targetUserId, now),
+      buildTenantStorageObjectName(
+        finalTenantId,
+        "attendance-face",
+        objectFilename,
+      ),
+    ]);
     if (!targetUser) return jsonError("User not found", 404);
     const branch = targetUser.branch;
     if (branch && !branch.isActive) return jsonError("Cabang karyawan sedang nonaktif", 400);
@@ -86,8 +99,6 @@ export async function POST(req: Request) {
     // If not admin, force targetUserId to be the logged-in user (prevents 403 if localStorage is out of sync)
     // We already set `targetUserId` above safely.
 
-    const now = new Date();
-    const schedule = await resolveActiveWorkSchedule(prisma, targetUserId, now);
     if (!schedule) return jsonError("Tidak ada jadwal kerja untuk hari ini", 400);
     const officeStart = schedule.startAt;
     const lateLimit = new Date(
@@ -96,19 +107,16 @@ export async function POST(req: Request) {
     const checkInStatus = now <= lateLimit ? "On Time" : "Late";
     const attendanceDay = schedule.workDate;
 
-    const checkInObjectName = await buildTenantStorageObjectName(
-      finalTenantId,
-      "attendance-face",
-      `check-in-${randomUUID()}.${imageValidation.extension}`,
-    );
-
-    uploadedFaceImage = await uploadBase64ToMinio(
-      faceCaptureBase64,
+    const uploadStartedAt = performance.now();
+    uploadedFaceImage = await uploadBufferToMinio(
+      imageValidation.buffer,
       checkInObjectName,
       BUCKET_AVATARS,
       imageValidation.contentType,
     );
+    const uploadMs = Math.round(performance.now() - uploadStartedAt);
 
+    const databaseStartedAt = performance.now();
     const attendance = await prisma.$transaction(async (tx) => {
       const existingToday = await tx.attendance.findFirst({
         where: {
@@ -163,6 +171,16 @@ export async function POST(req: Request) {
         },
       });
     });
+    const databaseMs = Math.round(performance.now() - databaseStartedAt);
+    console.info(JSON.stringify({
+      timestamp: new Date().toISOString(),
+      category: "attendance_check_in_performance",
+      userId: targetUserId,
+      tenantId: finalTenantId,
+      uploadMs,
+      databaseMs,
+      totalMs: Math.round(performance.now() - startedAt),
+    }));
 
     return NextResponse.json(
       {

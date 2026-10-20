@@ -130,9 +130,11 @@ interface HeaderToolbarProps {
         shiftName: string | null;
       } | null;
     };
+    checkOutRemainingSeconds: number;
     currentDateLabel: string;
     currentTime: string;
     faceCameraPreparing: boolean;
+    faceVerificationProcessing: boolean;
     hasBreakSession: boolean;
     locationChecking: boolean;
     locationReady: boolean;
@@ -350,15 +352,21 @@ export const headerToolbar = ({ actions, attendance, filters, isAdmin }: HeaderT
           <div className="flex w-full flex-col gap-2 sm:w-auto">
             <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
               {!attendance.todayAttendance ? (
-                <Button disabled={attendance.faceCameraPreparing} onClick={actions.onCheckIn} className="w-full bg-green-600 text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-70 sm:w-auto">
-                  {attendance.faceCameraPreparing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LogIn className="mr-2 h-4 w-4" />}
-                  {attendance.faceCameraPreparing ? "Menyiapkan..." : "Check In"}
+                <Button disabled={attendance.faceCameraPreparing || attendance.faceVerificationProcessing} onClick={actions.onCheckIn} className="w-full bg-green-600 text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-70 sm:w-auto">
+                  {attendance.faceCameraPreparing || attendance.faceVerificationProcessing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LogIn className="mr-2 h-4 w-4" />}
+                  {attendance.faceVerificationProcessing ? "Memproses..." : attendance.faceCameraPreparing ? "Menyiapkan..." : "Check In"}
                 </Button>
               ) : attendance.todayAttendance && !attendance.todayAttendance.checkOut ? (
                 <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-                  <Button disabled={attendance.faceCameraPreparing} onClick={actions.onCheckOut} className="w-full bg-red-600 text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-70 sm:w-auto">
-                    {attendance.faceCameraPreparing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LogOut className="mr-2 h-4 w-4" />}
-                    {attendance.faceCameraPreparing ? "Menyiapkan..." : "Check Out"}
+                  <Button disabled={attendance.faceCameraPreparing || attendance.faceVerificationProcessing || attendance.checkOutRemainingSeconds > 0} onClick={actions.onCheckOut} className="w-full bg-red-600 text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-70 sm:w-auto">
+                    {attendance.faceCameraPreparing || attendance.faceVerificationProcessing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LogOut className="mr-2 h-4 w-4" />}
+                    {attendance.faceVerificationProcessing
+                      ? "Memproses..."
+                      : attendance.faceCameraPreparing
+                        ? "Menyiapkan..."
+                        : attendance.checkOutRemainingSeconds > 0
+                          ? `Check Out (${String(Math.floor(attendance.checkOutRemainingSeconds / 60)).padStart(2, "0")}:${String(attendance.checkOutRemainingSeconds % 60).padStart(2, "0")})`
+                          : "Check Out"}
                   </Button>
                   {attendance.attendanceConfig.breakEnabled &&
                     (attendance.openBreakSession ? (
