@@ -7,6 +7,15 @@ import { attachCameraStream, isRetryableCameraError, releaseCameraStream } from 
 
 const CAMERA_START_ATTEMPTS = 3;
 const SERVER_VERIFICATION_TIMEOUT_MS = 40_000;
+const CENTER_POSE_DELAY_MS = 800;
+const CENTER_FRAME_GAP_MS = 150;
+const RIGHT_TURN_DELAY_MS = 1_000;
+const LEFT_TURN_DELAY_MS = 1_500;
+const MATCH_FEEDBACK_DELAY_MS = 180;
+const IDENTITY_CAPTURE_MAX_WIDTH = 480;
+const IDENTITY_CAPTURE_QUALITY = 0.75;
+const MOVEMENT_CAPTURE_MAX_WIDTH = 256;
+const MOVEMENT_CAPTURE_QUALITY = 0.6;
 
 interface FaceRecognitionModalProps {
   isOpen: boolean;
@@ -14,12 +23,15 @@ interface FaceRecognitionModalProps {
   onSuccess: (captureDataUrl: string, verificationToken: string) => void;
   onClose: () => void;
   onCameraPreparingChange?: (preparing: boolean) => void;
+  continueInBackground?: boolean;
+  onBackgroundProcessingChange?: (processing: boolean) => void;
 }
 
 type ScanStatus =
   | "starting-camera"
   | "center"
-  | "move-head"
+  | "turn-right"
+  | "turn-left"
   | "verifying"
   | "match"
   | "no-face"
@@ -42,7 +54,15 @@ function wait(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
-export default function FaceRecognitionModal({ isOpen, mode, onSuccess, onClose, onCameraPreparingChange }: FaceRecognitionModalProps) {
+export default function FaceRecognitionModal({
+  isOpen,
+  mode,
+  onSuccess,
+  onClose,
+  onCameraPreparingChange,
+  continueInBackground = false,
+  onBackgroundProcessingChange,
+}: FaceRecognitionModalProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const requestAbortRef = useRef<AbortController | null>(null);
@@ -56,17 +76,22 @@ export default function FaceRecognitionModal({ isOpen, mode, onSuccess, onClose,
     streamRef.current = null;
   }, []);
 
-  const captureFrame = useCallback(() => {
+  const captureFrame = useCallback((
+    maxWidth = IDENTITY_CAPTURE_MAX_WIDTH,
+    quality = IDENTITY_CAPTURE_QUALITY,
+  ) => {
     const video = videoRef.current;
     if (!video?.videoWidth || !video.videoHeight) return "";
-    const scale = Math.min(1, 480 / video.videoWidth);
+    // Keep uploads close to the backend detector's working size to reduce JSON
+    // encoding, network transfer, and JPEG decoding time.
+    const scale = Math.min(1, maxWidth / video.videoWidth);
     const canvas = document.createElement("canvas");
     canvas.width = Math.round(video.videoWidth * scale);
     canvas.height = Math.round(video.videoHeight * scale);
     const context = canvas.getContext("2d");
     if (!context) return "";
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
-    return canvas.toDataURL("image/jpeg", 0.72);
+    return canvas.toDataURL("image/jpeg", quality);
   }, []);
 
   useEffect(() => {
@@ -127,29 +152,50 @@ export default function FaceRecognitionModal({ isOpen, mode, onSuccess, onClose,
       setStatus("starting-camera");
       onCameraPreparingChange?.(true);
       try {
+        // Warm the server-side face models while the browser starts the camera
+        // and the user follows the pose instructions. The POST below shares the
+        // same model-loading promise, so cold starts no longer add serial delay.
+        void fetch("/api/face-recognition/verify", {
+          method: "GET",
+          cache: "no-store",
+        }).catch(() => undefined);
+
         if (!(await startCamera()) || cancelled) return;
 
         // attachCameraStream resolves only after a real frame is available, so
         // reveal the preview immediately and keep the frontend sequence short.
         onCameraPreparingChange?.(false);
         setStatus("center");
-        await wait(1_200);
+        await wait(CENTER_POSE_DELAY_MS);
         if (cancelled) return;
         const centerFrames = [captureFrame()];
-        await wait(250);
+        await wait(CENTER_FRAME_GAP_MS);
         if (cancelled) return;
         centerFrames.push(captureFrame());
 
-        setStatus("move-head");
-        await wait(1_400);
+        setStatus("turn-right");
+        await wait(RIGHT_TURN_DELAY_MS);
         if (cancelled) return;
-        const movementFrame = captureFrame();
+        const rightTurnFrame = captureFrame(
+          MOVEMENT_CAPTURE_MAX_WIDTH,
+          MOVEMENT_CAPTURE_QUALITY,
+        );
 
-        if (centerFrames.some((frame) => !frame) || !movementFrame) {
+        setStatus("turn-left");
+        await wait(LEFT_TURN_DELAY_MS);
+        if (cancelled) return;
+        const leftTurnFrame = captureFrame(
+          MOVEMENT_CAPTURE_MAX_WIDTH,
+          MOVEMENT_CAPTURE_QUALITY,
+        );
+
+        if (centerFrames.some((frame) => !frame) || !rightTurnFrame || !leftTurnFrame) {
           throw new Error("Kamera belum menghasilkan gambar. Silakan coba lagi.");
         }
 
         setStatus("verifying");
+        stopCamera();
+        if (continueInBackground) onBackgroundProcessingChange?.(true);
         const controller = new AbortController();
         requestAbortRef.current = controller;
         const timeoutId = window.setTimeout(
@@ -161,7 +207,10 @@ export default function FaceRecognitionModal({ isOpen, mode, onSuccess, onClose,
           response = await fetch("/api/face-recognition/verify", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ frames: [...centerFrames, movementFrame], mode }),
+            body: JSON.stringify({
+              frames: [...centerFrames, rightTurnFrame, leftTurnFrame],
+              mode,
+            }),
             signal: controller.signal,
           });
         } catch (error) {
@@ -178,6 +227,7 @@ export default function FaceRecognitionModal({ isOpen, mode, onSuccess, onClose,
         stopCamera();
 
         if (!response.ok || !result.ok) {
+          if (continueInBackground) onBackgroundProcessingChange?.(false);
           const nextStatus: ScanStatus = result.reason === "no-reference"
             ? "no-reference"
             : result.reason === "no-face"
@@ -198,10 +248,11 @@ export default function FaceRecognitionModal({ isOpen, mode, onSuccess, onClose,
         if (!result.verificationToken) throw new Error("Token verifikasi wajah tidak diterima.");
         setMatchScore(typeof result.score === "number" ? result.score : null);
         setStatus("match");
-        await wait(350);
+        if (!continueInBackground) await wait(MATCH_FEEDBACK_DELAY_MS);
         if (!cancelled) onSuccess(centerFrames[0], result.verificationToken);
       } catch (error) {
         if (cancelled) return;
+        if (continueInBackground) onBackgroundProcessingChange?.(false);
         onCameraPreparingChange?.(false);
         const errorName = error instanceof DOMException ? error.name : "";
         const isCameraError = ["NotAllowedError", "SecurityError", "NotFoundError", "NotSupportedError", "TimeoutError"].includes(errorName);
@@ -227,14 +278,16 @@ export default function FaceRecognitionModal({ isOpen, mode, onSuccess, onClose,
       requestAbortRef.current = null;
       stopCamera();
     };
-  }, [cameraRestartKey, captureFrame, isOpen, mode, onCameraPreparingChange, onSuccess, stopCamera]);
+  }, [cameraRestartKey, captureFrame, continueInBackground, isOpen, mode, onBackgroundProcessingChange, onCameraPreparingChange, onSuccess, stopCamera]);
 
   if (!isOpen) return null;
+  if (continueInBackground && (status === "verifying" || status === "match")) return null;
 
   const statusConfig: Record<ScanStatus, { label: string; color: string; icon: React.ReactNode }> = {
     "starting-camera": { label: "", color: "", icon: null },
     center: { label: "Lihat lurus ke kamera", color: "text-indigo-300", icon: <ScanFace className="h-5 w-5 animate-pulse" /> },
-    "move-head": { label: "Gerakkan kepala sedikit ke kiri atau kanan", color: "text-indigo-300", icon: <ScanFace className="h-5 w-5 animate-pulse" /> },
+    "turn-right": { label: "Gerakkan kepala sedikit ke kanan", color: "text-indigo-300", icon: <ScanFace className="h-5 w-5 animate-pulse" /> },
+    "turn-left": { label: "Sekarang gerakkan kepala sedikit ke kiri", color: "text-indigo-300", icon: <ScanFace className="h-5 w-5 animate-pulse" /> },
     verifying: { label: "Wajah sudah diambil, sedang mengecek...", color: "text-blue-400", icon: <ScanFace className="h-5 w-5 animate-pulse" /> },
     match: { label: "Wajah cocok!", color: "text-green-400", icon: <CheckCircle className="h-5 w-5" /> },
     "no-face": { label: errorMessage, color: "text-orange-400", icon: <Camera className="h-5 w-5" /> },
@@ -246,7 +299,7 @@ export default function FaceRecognitionModal({ isOpen, mode, onSuccess, onClose,
     "no-camera": { label: errorMessage, color: "text-red-400", icon: <Camera className="h-5 w-5" /> },
   };
   const cfg = statusConfig[status];
-  const isCapturing = status === "center" || status === "move-head";
+  const isCapturing = status === "center" || status === "turn-right" || status === "turn-left";
   const canRetry = ["no-face", "position", "movement", "no-match", "error", "no-camera"].includes(status);
   const isFailure = canRetry || status === "no-reference";
   const modeLabel = mode === "check-in" ? "Check In" : mode === "check-out" ? "Check Out" : mode === "break-in" ? "Break Check In" : "Break Check Out";
@@ -308,7 +361,7 @@ export default function FaceRecognitionModal({ isOpen, mode, onSuccess, onClose,
         <div className="flex px-4 py-3 sm:px-5 sm:py-4">
           <Button variant="ghost" className="w-full text-xs text-gray-400 hover:bg-gray-700 hover:text-white sm:text-sm" onClick={onClose}>Batal</Button>
         </div>
-        <p className="px-4 pb-3 text-center text-[10px] text-gray-500 sm:px-5 sm:pb-4 sm:text-xs">Lihat kamera, lalu gerakkan kepala sedikit ke salah satu sisi</p>
+        <p className="px-4 pb-3 text-center text-[10px] text-gray-500 sm:px-5 sm:pb-4 sm:text-xs">Lihat kamera, lalu gerakkan kepala ke kanan dan ke kiri</p>
       </div>
     </div>
   );

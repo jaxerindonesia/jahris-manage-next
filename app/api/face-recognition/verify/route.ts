@@ -5,13 +5,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireSessionUser } from "@/lib/auth/tenant";
 import { validateBase64Image } from "@/lib/security/file-validation";
 import { consumeRateLimit } from "@/lib/security/rate-limit";
-import { verifyFaceOnServer } from "@/lib/server/face-recognition";
+import {
+  verifyFaceOnServer,
+  warmFaceRecognitionServer,
+} from "@/lib/server/face-recognition";
 import {
   createFaceVerificationToken,
   type FaceVerificationMode,
 } from "@/lib/server/face-verification-token";
 
-const FRAME_COUNT = 3;
+const FRAME_COUNT = 4;
 const MAX_FRAME_BYTES = 700 * 1024;
 const ALLOWED_MODES = new Set<FaceVerificationMode>([
   "check-in",
@@ -19,6 +22,27 @@ const ALLOWED_MODES = new Set<FaceVerificationMode>([
   "break-in",
   "break-out",
 ]);
+
+export async function GET() {
+  const auth = await requireSessionUser();
+  if (auth.error) return auth.error;
+
+  try {
+    await warmFaceRecognitionServer(auth.user.avatarUrl);
+    return NextResponse.json(
+      { ok: true },
+      { headers: { "Cache-Control": "no-store" } },
+    );
+  } catch (error) {
+    console.error("Unable to warm face-recognition models", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return NextResponse.json(
+      { message: "Komponen verifikasi wajah di server belum siap." },
+      { status: 503 },
+    );
+  }
+}
 
 export async function POST(request: NextRequest) {
   const startedAt = performance.now();

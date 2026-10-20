@@ -6,11 +6,20 @@ import { PNG } from "pngjs";
 import * as faceapi from "face-api.js";
 import { parseFaceDescriptor } from "@/lib/helper/face-descriptor";
 
-const MATCH_DISTANCE_THRESHOLD = 0.45;
-const MINIMUM_YAW_CHANGE = 0.025;
+// Keep identity verification active, with a little tolerance for mobile-camera
+// lighting and angle differences against the registered reference photo.
+const MATCH_DISTANCE_THRESHOLD = 0.48;
+// Compare the two instructed poses directly. Requiring each pose to cross the
+// initial center line caused valid movement to fail when the initial pose was
+// already slightly angled. This lower spread still rejects a stationary face.
+const MINIMUM_TOTAL_YAW_SPREAD = 0.055;
 const IDENTITY_FRAME_COUNT = 2;
+const IDENTITY_DETECTOR_INPUT_SIZE = 160;
+const MOVEMENT_DETECTOR_INPUT_SIZE = 128;
+const DETECTOR_SCORE_THRESHOLD = 0.2;
 const MAX_REFERENCE_IMAGE_BYTES = 5 * 1024 * 1024;
 const referenceDescriptorCache = new Map<string, Float32Array>();
+const pendingReferenceDescriptors = new Map<string, Promise<Float32Array | null>>();
 let serverModelsPromise: Promise<void> | undefined;
 
 type LandmarkDetection = faceapi.WithFaceLandmarks<
@@ -59,6 +68,11 @@ function ensureServerModelsLoaded() {
     });
 
   return serverModelsPromise;
+}
+
+export async function warmFaceRecognitionServer(referenceImageUrl?: string) {
+  await ensureServerModelsLoaded();
+  if (referenceImageUrl) await loadReferenceDescriptor(referenceImageUrl);
 }
 
 function decodeImage(imageBuffer: Buffer) {
@@ -120,7 +134,10 @@ async function detectFaceLandmarks(imageBuffer: Buffer): Promise<DetectedFrame |
     const detection = await faceapi
       .detectSingleFace(
         image.tensor,
-        new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.2 }),
+        new faceapi.TinyFaceDetectorOptions({
+          inputSize: MOVEMENT_DETECTOR_INPUT_SIZE,
+          scoreThreshold: DETECTOR_SCORE_THRESHOLD,
+        }),
       )
       .withFaceLandmarks();
     return detection ? { detection, width: image.width, height: image.height } : null;
@@ -135,7 +152,10 @@ async function detectFaceIdentity(imageBuffer: Buffer): Promise<DetectedFrame<De
     const detection = await faceapi
       .detectSingleFace(
         image.tensor,
-        new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.2 }),
+        new faceapi.TinyFaceDetectorOptions({
+          inputSize: IDENTITY_DETECTOR_INPUT_SIZE,
+          scoreThreshold: DETECTOR_SCORE_THRESHOLD,
+        }),
       )
       .withFaceLandmarks()
       .withFaceDescriptor();
@@ -168,28 +188,38 @@ async function loadReferenceDescriptor(referenceImageUrl: string) {
   if (cached) return cached;
   if (!isAllowedReferenceUrl(referenceImageUrl)) return null;
 
-  try {
-    const response = await fetch(referenceImageUrl, {
-      signal: AbortSignal.timeout(8_000),
-      redirect: "follow",
-      cache: "force-cache",
-    });
-    if (!response.ok) return null;
-    const declaredLength = Number(response.headers.get("content-length") || 0);
-    if (declaredLength > MAX_REFERENCE_IMAGE_BYTES) return null;
-    const buffer = Buffer.from(await response.arrayBuffer());
-    if (!buffer.length || buffer.length > MAX_REFERENCE_IMAGE_BYTES) return null;
-    const frame = await detectFaceIdentity(buffer);
-    if (!frame) return null;
+  const pending = pendingReferenceDescriptors.get(referenceImageUrl);
+  if (pending) return pending;
 
-    referenceDescriptorCache.set(referenceImageUrl, frame.detection.descriptor);
-    return frame.detection.descriptor;
-  } catch (error) {
-    console.warn("Unable to build legacy face descriptor from avatar", {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return null;
-  }
+  const descriptorPromise = (async () => {
+    try {
+      const response = await fetch(referenceImageUrl, {
+        signal: AbortSignal.timeout(8_000),
+        redirect: "follow",
+        cache: "force-cache",
+      });
+      if (!response.ok) return null;
+      const declaredLength = Number(response.headers.get("content-length") || 0);
+      if (declaredLength > MAX_REFERENCE_IMAGE_BYTES) return null;
+      const buffer = Buffer.from(await response.arrayBuffer());
+      if (!buffer.length || buffer.length > MAX_REFERENCE_IMAGE_BYTES) return null;
+      const frame = await detectFaceIdentity(buffer);
+      if (!frame) return null;
+
+      referenceDescriptorCache.set(referenceImageUrl, frame.detection.descriptor);
+      return frame.detection.descriptor;
+    } catch (error) {
+      console.warn("Unable to build face descriptor from avatar", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    } finally {
+      pendingReferenceDescriptors.delete(referenceImageUrl);
+    }
+  })();
+
+  pendingReferenceDescriptors.set(referenceImageUrl, descriptorPromise);
+  return descriptorPromise;
 }
 
 function isWellPositioned(detection: LandmarkDetection, width: number, height: number) {
@@ -223,13 +253,18 @@ async function runVerification(
   storedDescriptor: unknown,
   referenceImageUrl?: string,
 ): Promise<ServerFaceVerificationResult> {
-  const parsedDescriptor = parseFaceDescriptor(storedDescriptor);
   await ensureServerModelsLoaded();
-  const reference = parsedDescriptor
-    ? new Float32Array(parsedDescriptor)
-    : referenceImageUrl
-      ? await loadReferenceDescriptor(referenceImageUrl)
-      : null;
+  // Build the reference with the same Node pipeline used for live frames.
+  // Browser-generated descriptors remain a fallback for inaccessible legacy
+  // avatars, but are no longer preferred because cross-runtime differences can
+  // incorrectly push the distance above the match threshold.
+  const serverReference = referenceImageUrl
+    ? await loadReferenceDescriptor(referenceImageUrl)
+    : null;
+  const parsedDescriptor = parseFaceDescriptor(storedDescriptor);
+  const reference = serverReference ?? (
+    parsedDescriptor ? new Float32Array(parsedDescriptor) : null
+  );
   if (!reference) {
     return {
       ok: false,
@@ -284,23 +319,29 @@ async function runVerification(
     };
   }
 
-  const movementFrame = await detectFaceLandmarks(frameBuffers[IDENTITY_FRAME_COUNT]);
-  if (!movementFrame) {
+  // These frames are independent. Starting both detections together avoids an
+  // unnecessary serial wait on runtimes that can schedule tensor work in parallel.
+  const [rightTurnFrame, leftTurnFrame] = await Promise.all([
+    detectFaceLandmarks(frameBuffers[IDENTITY_FRAME_COUNT]),
+    detectFaceLandmarks(frameBuffers[IDENTITY_FRAME_COUNT + 1]),
+  ]);
+  if (!rightTurnFrame || !leftTurnFrame) {
     return {
       ok: false,
       reason: "no-face",
-      message: "Wajah tidak terbaca saat bergerak. Coba gerakkan kepala lebih pelan.",
+      message: "Wajah tidak terbaca saat bergerak. Gerakkan kepala ke kanan lalu ke kiri dengan lebih pelan.",
     };
   }
 
-  const baselineYaw = getYawRatio(bestIdentityMatch.frame.detection.landmarks);
-  const movementYaw = getYawRatio(movementFrame.detection.landmarks) - baselineYaw;
-  const hasNaturalMovement = Math.abs(movementYaw) >= MINIMUM_YAW_CHANGE;
-  if (!hasNaturalMovement) {
+  const rightTurnYaw = getYawRatio(rightTurnFrame.detection.landmarks);
+  const leftTurnYaw = getYawRatio(leftTurnFrame.detection.landmarks);
+  const totalYawSpread = Math.abs(rightTurnYaw - leftTurnYaw);
+  const hasBothTurns = totalYawSpread >= MINIMUM_TOTAL_YAW_SPREAD;
+  if (!hasBothTurns) {
     return {
       ok: false,
       reason: "movement",
-      message: "Gerakan belum terbaca. Gerakkan kepala sedikit ke kiri atau kanan lalu coba lagi.",
+      message: "Gerakan belum lengkap. Gerakkan kepala ke kanan, lalu ke kiri sesuai instruksi.",
       score,
     };
   }

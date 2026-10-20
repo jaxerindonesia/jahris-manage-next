@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { formatTimeInputValue } from "@/lib/helper/date";
 import type { AttendanceOvertimeDto } from "@/lib/dto/attendance-overtime";
-import { submitAttendanceOvertime } from "../actions";
+import { submitAttendanceOvertime } from "@/lib/attendance/actions";
 
 export default function OvertimeConfirmationDialog({ suggestion, onClose }: {
   suggestion: AttendanceOvertimeDto;
