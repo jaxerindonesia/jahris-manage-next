@@ -9,7 +9,8 @@ import { haversineKm } from "@/lib/helper/attendance";
 import { parseApiError } from "@/lib/helper/response-api";
 import { getJakartaDayKey, getJakartaDayRange } from "@/lib/helper/date";
 import ExportPeriodDialog from "@/components/export-period-dialog";
-import type { AttendanceExportPeriod } from "./types";
+import type { AttendanceExportPeriod } from "@/lib/attendance/types";
+import { CHECK_OUT_MINIMUM_WAIT_MS } from "@/lib/attendance/constants";
 import type { AttendanceOvertimeDto } from "@/lib/dto/attendance-overtime";
 import OvertimeConfirmationDialog from "./components/overtime-confirmation-dialog";
 import FaceRecognitionModal from "./components/face-recognition-modal";
@@ -93,6 +94,7 @@ export default function Page() {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [currentTime, setCurrentTime] = useState("");
+  const [currentTimestamp, setCurrentTimestamp] = useState(() => Date.now());
   const [currentDateLabel, setCurrentDateLabel] = useState("");
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
@@ -112,6 +114,7 @@ export default function Page() {
   const [isFaceModalOpen, setIsFaceModalOpen] = useState(false);
   const [faceModalMode, setFaceModalMode] = useState<"check-in" | "check-out" | "break-in" | "break-out">("check-in");
   const [faceCameraPreparing, setFaceCameraPreparing] = useState(false);
+  const [faceVerificationProcessing, setFaceVerificationProcessing] = useState(false);
 
   const isAdmin = ["Super Admin", "Admin"].includes(userData.role);
 
@@ -129,6 +132,17 @@ export default function Page() {
     (session) => session && !session.breakOut,
   );
   const hasBreakSession = (todayAttendance?.breakSessions?.length || 0) > 0;
+  const checkOutRemainingSeconds = useMemo(() => {
+    if (!todayAttendance?.checkIn || todayAttendance.checkOut) return 0;
+    const checkInTimestamp = new Date(todayAttendance.checkIn).getTime();
+    if (!Number.isFinite(checkInTimestamp)) return 0;
+    return Math.max(
+      0,
+      Math.ceil(
+        (checkInTimestamp + CHECK_OUT_MINIMUM_WAIT_MS - currentTimestamp) / 1000,
+      ),
+    );
+  }, [currentTimestamp, todayAttendance?.checkIn, todayAttendance?.checkOut]);
 
   const refreshLocationReadiness = useCallback(async () => {
     if (typeof window === "undefined") return;
@@ -819,20 +833,25 @@ export default function Page() {
     doBreakCheckOut();
   }, [attendanceConfig.breakFaceCaptureEnabled, doBreakCheckOut]);
 
-  const handleFaceSuccess = useCallback((captureDataUrl: string, faceVerificationToken: string) => {
+  const handleFaceSuccess = useCallback(async (captureDataUrl: string, faceVerificationToken: string) => {
     if (!captureDataUrl || !faceVerificationToken) {
+      setFaceVerificationProcessing(false);
       toast.error("Gagal mengambil bukti foto, silakan ulangi scan wajah");
       return;
     }
     setIsFaceModalOpen(false);
-    if (faceModalMode === "check-in") {
-      doCheckIn(captureDataUrl, faceVerificationToken);
-    } else if (faceModalMode === "check-out") {
-      doCheckOut(captureDataUrl, faceVerificationToken);
-    } else if (faceModalMode === "break-in") {
-      doBreakCheckIn(captureDataUrl, faceVerificationToken);
-    } else {
-      doBreakCheckOut(captureDataUrl, faceVerificationToken);
+    try {
+      if (faceModalMode === "check-in") {
+        await doCheckIn(captureDataUrl, faceVerificationToken);
+      } else if (faceModalMode === "check-out") {
+        await doCheckOut(captureDataUrl, faceVerificationToken);
+      } else if (faceModalMode === "break-in") {
+        await doBreakCheckIn(captureDataUrl, faceVerificationToken);
+      } else {
+        await doBreakCheckOut(captureDataUrl, faceVerificationToken);
+      }
+    } finally {
+      setFaceVerificationProcessing(false);
     }
   }, [faceModalMode, doCheckIn, doCheckOut, doBreakCheckIn, doBreakCheckOut]);
 
@@ -873,7 +892,9 @@ export default function Page() {
         },
         attendance: {
           attendanceConfig,
+          checkOutRemainingSeconds,
           faceCameraPreparing,
+          faceVerificationProcessing,
           currentDateLabel,
           currentTime,
           hasBreakSession,
@@ -898,7 +919,9 @@ export default function Page() {
     [
       activeFilterCount,
       attendanceConfig,
+      checkOutRemainingSeconds,
       faceCameraPreparing,
+      faceVerificationProcessing,
       checkRole,
       clearFilters,
       currentDateLabel,
@@ -941,6 +964,21 @@ export default function Page() {
   }, [fetchAttendance, fetchAttendanceConfig, fetchTodayAttendance, userData]);
 
   useEffect(() => {
+    if (!userData.id) return;
+
+    // Prepare the server models and this user's reference while the attendance
+    // page is idle, so opening the camera does not pay the cold-start cost.
+    const controller = new AbortController();
+    void fetch("/api/face-recognition/verify", {
+      method: "GET",
+      cache: "no-store",
+      signal: controller.signal,
+    }).catch(() => undefined);
+
+    return () => controller.abort();
+  }, [userData.id]);
+
+  useEffect(() => {
     const data = JSON.parse(localStorage.getItem("hr_user_data") || "{}");
     setUserData({
       id: data.id || "",
@@ -964,6 +1002,7 @@ export default function Page() {
   useEffect(() => {
     const updateTime = () => {
       const now = new Date();
+      setCurrentTimestamp(now.getTime());
       setCurrentTime(
         now.toLocaleTimeString("id-ID", {
           hour: "2-digit",
@@ -1022,8 +1061,11 @@ export default function Page() {
         mode={faceModalMode}
         onSuccess={handleFaceSuccess}
         onCameraPreparingChange={setFaceCameraPreparing}
+        continueInBackground
+        onBackgroundProcessingChange={setFaceVerificationProcessing}
         onClose={() => {
           setFaceCameraPreparing(false);
+          setFaceVerificationProcessing(false);
           setIsFaceModalOpen(false);
         }}
       />
