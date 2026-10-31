@@ -57,6 +57,7 @@ export interface OvertimeConfigDto {
   payMethod: "PER_HOUR" | "PER_DAY";
   hourlyRate: number;
   dailyRate: number;
+  hideNominal?: boolean;
   approverConfigs?: {
     approverUserId: string;
     approverUser: {
