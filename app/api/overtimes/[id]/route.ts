@@ -2,6 +2,7 @@ export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
+import { maskOvertimeNominal, shouldHideOvertimeNominal } from "@/lib/helper/overtime-nominal";
 import prisma from "@/lib/prisma";
 import { ensureTenantScope, requireSessionUser } from "@/lib/auth/tenant";
 import { requirePermission } from "@/lib/auth/permission";
@@ -33,7 +34,8 @@ export async function GET(_: Request, { params }: Params) {
     });
 
     if (!item) return NextResponse.json({ message: "Overtime not found" }, { status: 404 });
-    return NextResponse.json({ message: "Success", data: item });
+    const hideNominal = await shouldHideOvertimeNominal(prisma, auth.user, scopedTenantId);
+    return NextResponse.json({ message: "Success", data: hideNominal ? maskOvertimeNominal(item) : item, hideNominal });
   } catch {
     return NextResponse.json({ message: "Failed to retrieve overtime" }, { status: 500 });
   }

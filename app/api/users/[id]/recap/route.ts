@@ -8,7 +8,7 @@ import {
   isAbsentAttendanceStatus,
   isLateAttendanceStatus,
   normalizeAttendanceStatus,
-  isPresentAttendanceStatus,
+  isWorkedAttendanceStatus,
 } from "@/lib/helper/attendance-status";
 
 type Params = {
@@ -95,10 +95,9 @@ export async function GET(req: Request, { params }: Params) {
     };
 
     attendances.forEach((att) => {
-      if (isPresentAttendanceStatus(att.status)) {
+      if (isWorkedAttendanceStatus(att.status)) {
         summary.totalHadir++;
-      } else if (isLateAttendanceStatus(att.status)) {
-        summary.totalTelat++;
+        if (isLateAttendanceStatus(att.status)) summary.totalTelat++;
       } else if (isAbsentAttendanceStatus(att.status)) {
         summary.totalAlpha++;
       } else if (submissionTypeStatusSet.has(normalizeAttendanceStatus(att.status))) {

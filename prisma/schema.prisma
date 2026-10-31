@@ -398,7 +398,8 @@ model OvertimeConfig {
   tenantId   String?  @map("tenant_id") @db.Uuid
   payMethod  String   @default("PER_HOUR") @map("pay_method")
   hourlyRate Float    @default(0) @map("hourly_rate")
-  dailyRate  Float    @default(0) @map("daily_rate")
+  dailyRate   Float    @default(0) @map("daily_rate")
+  hideNominal Boolean  @default(false) @map("hide_nominal")
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
   tenant     Tenant?  @relation(fields: [tenantId], references: [id])

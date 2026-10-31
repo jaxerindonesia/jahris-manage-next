@@ -9,6 +9,7 @@ const DEFAULT_CONFIG = {
   payMethod: "PER_HOUR",
   hourlyRate: 0,
   dailyRate: 0,
+  hideNominal: false,
 };
 
 export async function GET() {
@@ -46,6 +47,7 @@ export async function PUT(req: NextRequest) {
 
     const hourlyRate = Number(body.hourlyRate);
     const dailyRate = Number(body.dailyRate);
+    const hideNominal = body.hideNominal === true;
     const approverUserIds = Array.isArray(body.approverUserIds) ? body.approverUserIds : [];
 
     if (!Number.isFinite(hourlyRate) || hourlyRate < 0 || !Number.isFinite(dailyRate) || dailyRate < 0) {
@@ -56,7 +58,7 @@ export async function PUT(req: NextRequest) {
       orderBy: { updatedAt: "desc" },
     });
 
-    const data = { payMethod: "PER_HOUR", hourlyRate, dailyRate };
+    const data = { payMethod: "PER_HOUR", hourlyRate, dailyRate, hideNominal };
     const saved = existing
       ? await prisma.overtimeConfig.update({ where: { id: existing.id }, data })
       : await prisma.overtimeConfig.create({ data: { ...data, ...(scopedTenantId ? { tenantId: scopedTenantId } : {}) } });
