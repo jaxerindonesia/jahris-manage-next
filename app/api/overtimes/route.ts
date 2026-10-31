@@ -6,6 +6,7 @@ import prisma from "@/lib/prisma";
 import { ensureTenantScope, requireSessionUser } from "@/lib/auth/tenant";
 import { requirePermission } from "@/lib/auth/permission";
 import { getJakartaDayRange } from "@/lib/helper/date";
+import { maskOvertimeNominal, shouldHideOvertimeNominal } from "@/lib/helper/overtime-nominal";
 
 export async function GET(req: NextRequest) {
   try {
@@ -110,7 +111,7 @@ export async function GET(req: NextRequest) {
       ];
     }
 
-    const [overtimes, total] = await Promise.all([
+    const [overtimes, total, hideNominal] = await Promise.all([
       prisma.overtime.findMany({
         where,
         skip: (page - 1) * limit,
@@ -128,9 +129,15 @@ export async function GET(req: NextRequest) {
         },
       }),
       prisma.overtime.count({ where }),
+      shouldHideOvertimeNominal(prisma, auth.user, scopedTenantId),
     ]);
 
-    return NextResponse.json({ message: "Overtimes retrieved successfully", data: overtimes, total });
+    return NextResponse.json({
+      message: "Overtimes retrieved successfully",
+      data: hideNominal ? overtimes.map(maskOvertimeNominal) : overtimes,
+      total,
+      hideNominal,
+    });
   } catch {
     return NextResponse.json({ message: "Failed to retrieve overtimes data" }, { status: 500 });
   }
