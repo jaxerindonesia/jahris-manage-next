@@ -28,6 +28,7 @@ export default function Page() {
   const { checkRole, permissions } = usePermission();
   const [data, setData] = useState<OvertimeDto[]>([]);
   const [total, setTotal] = useState(0);
+  const [hideNominal, setHideNominal] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [detailItem, setDetailItem] = useState<OvertimeDto | undefined>(undefined);
@@ -69,6 +70,10 @@ export default function Page() {
   const [checkingAction, setCheckingAction] = useState(false);
   const [faceCameraPreparing, setFaceCameraPreparing] = useState(false);
 
+  const visibleColumns = useMemo(
+    () => (hideNominal ? columnFormats.filter((column) => column.key !== "payoutAmount") : columnFormats),
+    [hideNominal],
+  );
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / ITEMS_PER_PAGE)), [total]);
 
   const activeFilterCount = useMemo(() => {
@@ -145,6 +150,7 @@ export default function Page() {
 
       const json: ApiResponse = await response.json();
       const allData: OvertimeDto[] = json.data || [];
+      const isNominalHidden = Boolean((json as { hideNominal?: boolean }).hideNominal);
       const XLSX = await import("xlsx");
 
       const rows = allData.map((item) => ({
@@ -153,7 +159,7 @@ export default function Page() {
         "Check In": item.startTime ? formatTimeId(item.startTime) : "-",
         "Check Out": item.endTime ? formatTimeId(item.endTime) : "-",
         Durasi: item.overtimeMinutes ? `${Math.floor((item.overtimeMinutes || 0) / 60)} jam` : "-",
-        Nominal: item.payoutAmount || 0,
+        ...(isNominalHidden ? {} : { Nominal: item.payoutAmount || 0 }),
         Status: STATUS_LABEL[item.status] || item.status || "-",
         Keterangan: item.description || "-",
         "Bukti Lembur": item.proofUrl || "-",
@@ -322,6 +328,7 @@ export default function Page() {
         body: JSON.stringify({
           hourlyRate: draftConfig.hourlyRate,
           dailyRate: draftConfig.dailyRate,
+          hideNominal: Boolean(draftConfig.hideNominal),
           approverUserIds: draftApproverUserIds,
         }),
       });
@@ -448,6 +455,7 @@ export default function Page() {
 
       setData(json.data ?? []);
       setTotal(json.total ?? 0);
+      setHideNominal(Boolean((json as { hideNominal?: boolean }).hideNominal));
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Gagal memuat data lembur",
@@ -613,7 +621,7 @@ export default function Page() {
     <>
       <DynamicPage
         toolbar={toolbar}
-        columns={columnFormats}
+        columns={visibleColumns}
         items={data}
         total={total}
         currentPage={currentPage}
@@ -683,6 +691,7 @@ export default function Page() {
         }}
         onDailyRateChange={(value) => setDraftConfig((current) => ({ ...current, dailyRate: value }))}
         onHourlyRateChange={(value) => setDraftConfig((current) => ({ ...current, hourlyRate: value }))}
+        onHideNominalChange={(value) => setDraftConfig((current) => ({ ...current, hideNominal: value }))}
         onRemoveApprover={handleRemoveApprover}
         onSave={handleSaveConfig}
       />

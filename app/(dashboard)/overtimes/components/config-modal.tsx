@@ -25,6 +25,7 @@ interface ConfigModalProps {
     onClose: () => void;
     onDailyRateChange: (value: number) => void;
     onHourlyRateChange: (value: number) => void;
+    onHideNominalChange: (value: boolean) => void;
     onRemoveApprover: (userId: string) => void;
     onSave: () => void;
 }
@@ -38,6 +39,7 @@ export default function ConfigModal({
     onClose,
     onDailyRateChange,
     onHourlyRateChange,
+    onHideNominalChange,
     onRemoveApprover,
     onSave,
 }: ConfigModalProps) {
@@ -129,6 +131,21 @@ export default function ConfigModal({
                             Approval terakhir akan memilih metode Per Jam atau Per Hari memakai tarif ini.
                         </p>
                     </div>
+
+                    <label className="flex items-start gap-3 rounded-xl border border-gray-200 p-4 dark:border-gray-700">
+                        <input
+                            type="checkbox"
+                            className="mt-0.5 h-4 w-4 accent-blue-600"
+                            checked={Boolean(config.hideNominal)}
+                            onChange={(event) => onHideNominalChange(event.target.checked)}
+                        />
+                        <span className="grid gap-1">
+                            <span className="text-sm font-medium">Sembunyikan nominal dari karyawan</span>
+                            <span className="text-xs text-muted-foreground">
+                                Nominal lembur hanya dapat dilihat oleh role selain Karyawan.
+                            </span>
+                        </span>
+                    </label>
                 </div>
 
                 <hr className="border-gray-200 dark:border-gray-700" />
