@@ -2,6 +2,7 @@ export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
 import { requireSessionUser } from "@/lib/auth/tenant";
+import { getNationalHolidaysByYears } from "@/lib/helper/holiday";
 
 export async function GET() {
   try {
@@ -9,29 +10,12 @@ export async function GET() {
     if (auth.error) return auth.error;
 
     const year = new Date().getFullYear();
-    // Ambil data hari libur tahun ini dan tahun depan sekaligus
-    const [resThis, resNext] = await Promise.all([
-      fetch(`https://libur.deno.dev/api?year=${year}`, {
-        next: { revalidate: 86400 }, // cache 24 jam
-      }),
-      fetch(`https://libur.deno.dev/api?year=${year + 1}`, {
-        next: { revalidate: 86400 },
-      }),
+    const results = await Promise.allSettled([
+      getNationalHolidaysByYears([year]),
+      getNationalHolidaysByYears([year + 1]),
     ]);
-
-    if (!resThis.ok && !resNext.ok) {
-      throw new Error("Gagal mengambil data hari libur");
-    }
-
-    const [dataThis, dataNext] = await Promise.all([
-      resThis.ok ? resThis.json() : [],
-      resNext.ok ? resNext.json() : [],
-    ]);
-
-    const allHolidays: { date: string; name: string }[] = [
-      ...(Array.isArray(dataThis) ? dataThis : []),
-      ...(Array.isArray(dataNext) ? dataNext : []),
-    ];
+    const allHolidays = results.flatMap((result) => result.status === "fulfilled" ? result.value : []);
+    if (!allHolidays.length) throw new Error("Gagal mengambil data hari libur");
 
     // Filter hanya hari libur yang belum lewat + hitung daysLeft
     const today = new Date();

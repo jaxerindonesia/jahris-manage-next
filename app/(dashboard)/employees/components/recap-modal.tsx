@@ -32,9 +32,9 @@ import {
   buildEmployeeRecapPrintHtml,
   EMPLOYEE_RECAP_MONTHS,
   getEmployeeSubmissionStatusLabel,
-  waitForEmployeeRecapImages,
 } from "@/lib/helper/employee-recap-print";
 import { useTenantConfig } from "@/contexts/TenantConfigContext";
+import { waitForPrintImages } from "@/lib/helper/print";
 
 type RecapData = EmployeeRecapDto;
 const MONTHS = EMPLOYEE_RECAP_MONTHS;
@@ -144,7 +144,7 @@ export default function RecapModal({
     }`;
     document.head.appendChild(style);
 
-    await waitForEmployeeRecapImages(printDiv);
+    await waitForPrintImages(printDiv);
 
     const cleanup = () => {
       printDiv.remove();

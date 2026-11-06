@@ -3,6 +3,8 @@
 import { NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
+import minioClient, { BUCKET_AVATARS } from "@/lib/minio";
+import { isPdfUrl } from "@/lib/helper/attachment";
 import { getReceiptUrls } from "@/lib/helper/reimbursement";
 import { ensureTenantScope, requireSessionUser } from "@/lib/auth/tenant";
 import { requirePermission } from "@/lib/auth/permission";
@@ -13,7 +15,7 @@ import { cleanupReimbursementReceipts, prepareReimbursementDetails, Reimbursemen
 type Params = { params: Promise<{ id: string }> };
 const includeDetails = { details: { orderBy: { position: "asc" as const } } };
 
-export async function GET(_: Request, { params }: Params) {
+export async function GET(req: Request, { params }: Params) {
   const { id } = await params;
   try {
     const auth = await requireSessionUser();
@@ -27,6 +29,24 @@ export async function GET(_: Request, { params }: Params) {
       include: { ...includeDetails, user: { select: { id: true, name: true, position: true, department: true } } },
     });
     if (!item) return NextResponse.json({ message: "Reimbursement not found" }, { status: 404 });
+    const receiptUrl = new URL(req.url).searchParams.get("receiptUrl");
+    if (receiptUrl) {
+      const receipts = [item.receiptUrl, ...item.details.flatMap(getReceiptUrls)];
+      if (!receipts.includes(receiptUrl) || !isPdfUrl(receiptUrl)) {
+        return NextResponse.json({ message: "Lampiran PDF tidak ditemukan" }, { status: 404 });
+      }
+      const path = new URL(receiptUrl).pathname;
+      const prefix = `/${BUCKET_AVATARS}/`;
+      if (!path.startsWith(prefix)) {
+        return NextResponse.json({ message: "Lokasi lampiran tidak valid" }, { status: 400 });
+      }
+      const stream = await minioClient.getObject(BUCKET_AVATARS, decodeURIComponent(path.slice(prefix.length)));
+      const chunks: Buffer[] = [];
+      for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+      return new NextResponse(new Uint8Array(Buffer.concat(chunks)), {
+        headers: { "Content-Type": "application/pdf", "Cache-Control": "private, no-store" },
+      });
+    }
     return NextResponse.json({ message: "Success", data: item });
   } catch {
     return NextResponse.json({ message: "Failed to retrieve reimbursement" }, { status: 500 });

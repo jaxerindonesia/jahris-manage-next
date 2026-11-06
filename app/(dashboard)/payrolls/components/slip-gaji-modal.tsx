@@ -5,7 +5,7 @@ import { PayrollDto } from "@/lib/dto/payroll";
 import { months } from "@/lib/helper/date";
 import { formatCurrency } from "@/lib/helper/format-currency";
 import { useState } from "react";
-import { AUTO_LATE_DEDUCTION_COMPONENT_NAME } from "@/lib/constants/payroll";
+import { getPayrollComponentDescription, getPayrollSalaryDescription } from "@/lib/helper/payroll-description";
 
 interface SlipGajiModalProps {
     isOpen?: boolean;
@@ -186,7 +186,7 @@ function SlipContent({
     tenantConfig?: TenantConfig | null;
     periodLabel: string;
 }) {
-    const takeHomePay = payroll.basicSalary + payroll.allowances - payroll.deductions;
+    const takeHomePay = payroll.totalSalary;
     const companyName = tenantConfig?.companyName?.trim() || "JAXER GRUP INDONESIA";
     const companyUrl = tenantConfig?.companyUrl?.trim() || "";
     const companyLogo =
@@ -291,6 +291,14 @@ function SlipContent({
 
             {/* ---- Salary Breakdown ---- */}
             <div className="px-8 py-5">
+                <div className="mb-5 grid grid-cols-3 gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm">
+                    <div><p className="text-xs text-gray-500">Jenis Gaji</p><p className="font-semibold">{payroll.salaryType === "daily" ? "Harian" : "Bulanan"}</p></div>
+                    <div><p className="text-xs text-gray-500">Hari Hadir</p><p className="font-semibold">{payroll.paidAttendanceDays ?? 0} hari</p></div>
+                    <div><p className="text-xs text-gray-500">Tidak Hadir</p><p className="font-semibold">{payroll.absentAttendanceDays ?? 0} hari</p></div>
+                    {payroll.salaryType === "daily" && (
+                        <p className="col-span-3 text-xs text-gray-600">Gaji pokok dihitung hanya dari hari hadir pada periode ini. Hari tidak masuk tidak menambah gaji pokok.</p>
+                    )}
+                </div>
                 <table className="w-full">
                     <thead>
                         <tr className="border-b-2 border-gray-200">
@@ -313,27 +321,25 @@ function SlipContent({
                         </tr>
                         <tr>
                             <td className="py-2 pl-4 text-sm text-gray-700">
-                                <div>Gaji Pokok</div>
-                                {payroll.salaryType === "daily" && (
-                                    <div className="text-xs text-gray-500">
-                                        {formatCurrency(Number(payroll.salaryRate || 0))} ×{" "}
-                                        {payroll.paidAttendanceDays || 0} hari hadir
-                                    </div>
-                                )}
+                                <div>Gaji Pokok ({payroll.salaryType === "daily" ? "Harian" : "Bulanan"})</div>
+                                <div className="text-xs text-gray-500">{getPayrollSalaryDescription(payroll)}</div>
                             </td>
                             <td className="py-2 text-right text-sm font-medium text-gray-900">
                                 {formatCurrency(payroll.basicSalary)}
                             </td>
                         </tr>
                         <tr>
-                            <td className="py-2 pl-4 text-sm text-gray-700">Tunjangan</td>
+                            <td className="py-2 pl-4 text-sm text-gray-700">Penghasilan Tambahan</td>
                             <td className="py-2 text-right text-sm font-medium text-green-600">
                                 + {formatCurrency(payroll.allowances)}
                             </td>
                         </tr>
                         {earningComponents.map((item) => (
                             <tr key={item.id || item.nameSnapshot}>
-                                <td className="py-2 pl-8 text-sm text-gray-600">{item.nameSnapshot}</td>
+                                <td className="py-2 pl-8 text-sm text-gray-600">
+                                    <div>{item.nameSnapshot}</div>
+                                    <div className="text-xs text-gray-500">{getPayrollComponentDescription(item, payroll)}</div>
+                                </td>
                                 <td className="py-2 text-right text-sm text-gray-700">
                                     + {formatCurrency(item.amount)}
                                 </td>
@@ -358,12 +364,7 @@ function SlipContent({
                             <tr key={item.id || item.nameSnapshot}>
                                 <td className="py-2 pl-8 text-sm text-gray-600">
                                     <div>{item.nameSnapshot}</div>
-                                    {item.nameSnapshot === AUTO_LATE_DEDUCTION_COMPONENT_NAME && (
-                                        <div className="text-xs text-gray-500">
-                                            {formatCurrency(Number(payroll.lateDeductionRate || 0))} ×{" "}
-                                            {payroll.lateAttendanceDays || 0} hari terlambat
-                                        </div>
-                                    )}
+                                    <div className="text-xs text-gray-500">{getPayrollComponentDescription(item, payroll)}</div>
                                 </td>
                                 <td className="py-2 text-right text-sm text-gray-700">
                                     - {formatCurrency(item.amount)}
@@ -379,7 +380,7 @@ function SlipContent({
                         <div>
                             <p className="text-sm text-blue-100 font-medium">Take Home Pay</p>
                             <p className="text-xs text-blue-200 mt-0.5">
-                                Gaji Pokok + Tunjangan − Potongan
+                                Gaji Pokok + Penghasilan Tambahan − Potongan
                             </p>
                         </div>
                         <p className="text-2xl font-semibold">{formatCurrency(takeHomePay)}</p>
