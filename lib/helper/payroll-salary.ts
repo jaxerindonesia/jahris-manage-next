@@ -1,23 +1,22 @@
 import prisma from "@/lib/prisma";
 import {
   isLateAttendanceStatus,
-  isAbsentAttendanceStatus,
   isWorkedAttendanceStatus,
 } from "@/lib/helper/attendance-status";
 import type { PayrollSalarySummaryDto } from "@/lib/dto/payroll-calculation";
+import { getPayrollPeriodRange, type PayrollPeriod } from "@/lib/helper/payroll-period";
+import { WORK_DAY_CODES } from "@/lib/helper/work-schedule";
+import { getJakartaDayKey } from "@/lib/helper/date";
+import { getPayrollAbsentDays } from "@/lib/helper/payroll-attendance";
 
-export async function getPayrollSalarySummary(params: {
+export async function getPayrollSalarySummary(params: PayrollPeriod & {
   tenantId?: string | null;
   userId: string;
-  month: number;
-  year: number;
-  startDate?: Date | string | null;
-  endDate?: Date | string | null;
+  now?: Date;
 }): Promise<PayrollSalarySummaryDto & { tenantId: string | null }> {
-  const { tenantId, userId, month, year, startDate: paramStart, endDate: paramEnd } = params;
-  if (!userId || month < 1 || month > 12 || year < 1) {
-    throw new Error("Periode payroll tidak valid");
-  }
+  const { tenantId, userId } = params;
+  const range = getPayrollPeriodRange(params);
+  if (!userId) throw new Error("Karyawan wajib dipilih");
   const user = await prisma.user.findFirst({
     where: {
       id: userId,
@@ -27,6 +26,7 @@ export async function getPayrollSalarySummary(params: {
       salary: true,
       salaryType: true,
       tenantId: true,
+      joinDate: true,
     },
   });
 
@@ -36,25 +36,23 @@ export async function getPayrollSalarySummary(params: {
 
   const salaryRate = Number(user.salary || 0);
   const salaryType = user.salaryType === "daily" ? "daily" : "monthly";
+  const now = params.now ?? new Date();
+  const tomorrow = getJakartaDayKey(now);
+  tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+  const joinDay = user.joinDate ? getJakartaDayKey(user.joinDate) : range.gte;
+  const attendanceRange = {
+    gte: joinDay > range.gte ? joinDay : range.gte,
+    lt: tomorrow < range.lt ? tomorrow : range.lt,
+  };
 
-  const rangeStart = paramStart ? new Date(paramStart) : new Date(year, month - 1, 1);
-  rangeStart.setHours(0, 0, 0, 0);
-
-  const rangeEnd = paramEnd ? new Date(paramEnd) : new Date(year, month, 1);
-  if (paramEnd) {
-    rangeEnd.setHours(23, 59, 59, 999);
-  }
-
-  const attendances = await prisma.attendance.findMany({
+  const attendances = attendanceRange.gte < attendanceRange.lt ? await prisma.attendance.findMany({
     where: {
       userId,
-      attendanceDay: {
-        gte: rangeStart,
-        ...(paramEnd ? { lte: rangeEnd } : { lt: rangeEnd }),
-      },
+      tenantId: user.tenantId,
+      attendanceDay: attendanceRange,
     },
     select: { status: true, attendanceDay: true },
-  });
+  }) : [];
   const paidAttendanceDays = attendances.filter((attendance) =>
     isWorkedAttendanceStatus(attendance.status),
   ).length;
@@ -67,29 +65,28 @@ export async function getPayrollSalarySummary(params: {
     select: { lateDeductionAmount: true },
   });
   const lateDeductionRate = Number(attendanceConfig?.lateDeductionAmount || 0);
-  const absentRates = user.tenantId
+  const absentRates = user.tenantId && salaryType === "monthly"
     ? await prisma.$queryRaw<Array<{ day_of_week: string; amount: number }>>`
         SELECT day_of_week, amount FROM attendance_absent_deductions
         WHERE tenant_id = ${user.tenantId}::uuid
       `
     : [];
   const rateByDay = new Map(absentRates.map((rate) => [rate.day_of_week, rate.amount]));
-  const dayCodes = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
-  const absentAttendances = attendances.filter((attendance) => isAbsentAttendanceStatus(attendance.status));
-  const absentDeductionAmount = absentAttendances.reduce((total, attendance) =>
-    total + (rateByDay.get(dayCodes[attendance.attendanceDay.getUTCDay()]) ?? 0), 0);
+  const absentDays = await getPayrollAbsentDays({ userId, tenantId: user.tenantId, range: attendanceRange, attendances, now });
+  const absentDeductionAmount = salaryType === "daily" ? 0 : absentDays.reduce((total, day) =>
+    total + (rateByDay.get(WORK_DAY_CODES[day.getUTCDay()]) ?? 0), 0);
 
   return {
     salaryType,
     tenantId: user.tenantId,
     salaryRate,
-    paidAttendanceDays: salaryType === "daily" ? paidAttendanceDays : 0,
+    paidAttendanceDays,
     basicSalary:
       salaryType === "daily" ? salaryRate * paidAttendanceDays : salaryRate,
     lateDeductionRate,
     lateAttendanceDays,
     lateDeductionAmount: lateDeductionRate * lateAttendanceDays,
-    absentAttendanceDays: absentAttendances.length,
+    absentAttendanceDays: absentDays.length,
     absentDeductionAmount,
   };
 }

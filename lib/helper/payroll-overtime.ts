@@ -1,31 +1,19 @@
 import prisma from "@/lib/prisma";
+import { getPayrollPeriodRange, type PayrollPeriod } from "@/lib/helper/payroll-period";
 
-export async function getApprovedOvertimePayoutSummary(params: {
+export async function getApprovedOvertimePayoutSummary(params: PayrollPeriod & {
   tenantId?: string | null;
   userId: string;
-  month: number;
-  year: number;
-  startDate?: Date | string | null;
-  endDate?: Date | string | null;
 }) {
-  const { tenantId, userId, month, year, startDate: paramStart, endDate: paramEnd } = params;
-  const rangeStart = paramStart ? new Date(paramStart) : new Date(year, month - 1, 1);
-  rangeStart.setHours(0, 0, 0, 0);
-
-  const rangeEnd = paramEnd ? new Date(paramEnd) : new Date(year, month, 1);
-  if (paramEnd) {
-    rangeEnd.setHours(23, 59, 59, 999);
-  }
+  const { tenantId, userId } = params;
+  const range = getPayrollPeriodRange(params);
 
   const aggregates = await prisma.overtime.aggregate({
     where: {
       userId,
       status: "APPROVED",
       payoutAmount: { gt: 0 },
-      overtimeDate: {
-        gte: rangeStart,
-        ...(paramEnd ? { lte: rangeEnd } : { lt: rangeEnd }),
-      },
+      overtimeDate: range,
       ...(tenantId ? { tenantId } : { tenantId: null }),
     },
     _sum: {
