@@ -92,23 +92,3 @@ const PRINT_STYLES = `<style>
 export function buildEmployeeRecapPrintHtml(items: EmployeeRecapPrintItem[]) {
   return `<div id="employee-recap-print-container">${PRINT_STYLES}${items.map(buildRecapPage).join("")}</div>`;
 }
-
-export async function waitForEmployeeRecapImages(container: HTMLElement) {
-  const images = Array.from(container.querySelectorAll("img"));
-  await Promise.all(
-    images.map(
-      (image) =>
-        new Promise<void>((resolve) => {
-          if (image.complete) {
-            resolve();
-            return;
-          }
-
-          const finish = () => resolve();
-          image.addEventListener("load", finish, { once: true });
-          image.addEventListener("error", finish, { once: true });
-          window.setTimeout(finish, 3000);
-        }),
-    ),
-  );
-}

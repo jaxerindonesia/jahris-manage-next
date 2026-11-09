@@ -6,46 +6,13 @@ import type { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { ensureTenantScope, requireSessionUser } from "@/lib/auth/tenant";
 import { requirePermission } from "@/lib/auth/permission";
-import {
-  AUTO_LATE_DEDUCTION_COMPONENT_NAME,
-  AUTO_ABSENT_DEDUCTION_COMPONENT_NAME,
-  AUTO_OVERTIME_COMPONENT_NAME,
-} from "@/lib/constants/payroll";
+import { getAutomaticPayrollComponents, getPayrollTotals, normalizePayrollComponentValues } from "@/lib/helper/payroll-components";
 import {
   getApprovedOvertimePayoutSummary,
 } from "@/lib/helper/payroll-overtime";
 import { getPayrollSalarySummary } from "@/lib/helper/payroll-salary";
+import { getPayrollSlipAttendance } from "@/lib/helper/payroll-slip-attendance";
 import { lockPayrollJournal, syncPayrollJournal } from "@/lib/helper/payroll-journal";
-
-function normalizeComponentValues(items: unknown[], basicSalary: number) {
-  return (Array.isArray(items) ? items : []).map((item) => {
-    const row = item as Record<string, unknown>;
-    const inputTypeSnapshot = String(row.inputTypeSnapshot || row.inputType || "MANUAL").toUpperCase();
-    const baseValue =
-      inputTypeSnapshot === "PERCENTAGE"
-        ? Number(row.baseValue ?? row.amount ?? 0)
-        : null;
-    const amount =
-      inputTypeSnapshot === "PERCENTAGE"
-        ? (basicSalary * Number(row.baseValue ?? row.amount ?? 0)) / 100
-        : Number(row.amount || 0);
-
-    return {
-      componentConfigId: row.componentConfigId ? String(row.componentConfigId) : null,
-      nameSnapshot: String(row.nameSnapshot || row.name || "").trim(),
-      typeSnapshot: String(row.typeSnapshot || row.type || "").toUpperCase(),
-      inputTypeSnapshot,
-      amount: Number.isFinite(amount) ? amount : 0,
-      baseValue: baseValue !== null && Number.isFinite(baseValue) ? baseValue : null,
-    };
-  }).filter((item) =>
-    item.nameSnapshot &&
-    item.nameSnapshot !== AUTO_OVERTIME_COMPONENT_NAME &&
-    item.nameSnapshot !== AUTO_LATE_DEDUCTION_COMPONENT_NAME &&
-    item.nameSnapshot !== AUTO_ABSENT_DEDUCTION_COMPONENT_NAME &&
-    ["EARNING", "DEDUCTION"].includes(item.typeSnapshot),
-  );
-}
 
 type Params = {
   params: {
@@ -81,7 +48,8 @@ export async function GET(_: Request, { params }: Params) {
       );
     }
 
-    return NextResponse.json({ message: "Success", data: item });
+    const attendanceSummary = await getPayrollSlipAttendance(item);
+    return NextResponse.json({ message: "Success", data: { ...item, attendanceSummary } });
   } catch {
     return NextResponse.json(
       { message: "Failed to retrieve payroll" },
@@ -101,7 +69,7 @@ export async function PUT(req: Request, { params }: Params) {
 
     const existing = await prisma.payroll.findFirst({
       where: { id: p.id, ...(scopedTenantId ? { tenantId: scopedTenantId } : {}) },
-      select: { id: true, userId: true, month: true, year: true, tenantId: true },
+      select: { id: true, userId: true, month: true, year: true, tenantId: true, periodStartDate: true, periodEndDate: true, componentValues: true },
     });
     if (!existing) return NextResponse.json({ message: "Payroll not found" }, { status: 404 });
 
@@ -124,61 +92,28 @@ export async function PUT(req: Request, { params }: Params) {
       );
     }
     const targetTenantId = scopedTenantId ?? existing.tenantId ?? null;
+    const startDate = body.periodStartDate === undefined ? existing.periodStartDate : body.periodStartDate;
+    const endDate = body.periodEndDate === undefined ? existing.periodEndDate : body.periodEndDate;
     const salarySummary = await getPayrollSalarySummary({
       tenantId: targetTenantId,
       userId: targetUserId,
       month: targetMonth,
       year: targetYear,
-      startDate: body.periodStartDate ? String(body.periodStartDate).slice(0, 10) : undefined,
-      endDate: body.periodEndDate ? String(body.periodEndDate).slice(0, 10) : undefined,
+      startDate,
+      endDate,
     });
     const basicSalary = salarySummary.basicSalary;
-    const componentValues = normalizeComponentValues(body.componentValues, basicSalary);
+    const componentValues = normalizePayrollComponentValues(body.componentValues ?? existing.componentValues, basicSalary);
     const overtimeSummary = await getApprovedOvertimePayoutSummary({
       tenantId: salarySummary.tenantId,
       userId: targetUserId,
       month: targetMonth,
       year: targetYear,
-      startDate: body.periodStartDate ? String(body.periodStartDate).slice(0, 10) : undefined,
-      endDate: body.periodEndDate ? String(body.periodEndDate).slice(0, 10) : undefined,
+      startDate,
+      endDate,
     });
-    if (overtimeSummary.totalAmount > 0) {
-      componentValues.push({
-        componentConfigId: null,
-        nameSnapshot: AUTO_OVERTIME_COMPONENT_NAME,
-        typeSnapshot: "EARNING",
-        inputTypeSnapshot: "FIXED",
-        amount: overtimeSummary.totalAmount,
-        baseValue: null,
-      });
-    }
-    if (salarySummary.lateDeductionAmount > 0) {
-      componentValues.push({
-        componentConfigId: null,
-        nameSnapshot: AUTO_LATE_DEDUCTION_COMPONENT_NAME,
-        typeSnapshot: "DEDUCTION",
-        inputTypeSnapshot: "FIXED",
-        amount: salarySummary.lateDeductionAmount,
-        baseValue: null,
-      });
-    }
-    if (salarySummary.absentDeductionAmount > 0) {
-      componentValues.push({
-        componentConfigId: null,
-        nameSnapshot: AUTO_ABSENT_DEDUCTION_COMPONENT_NAME,
-        typeSnapshot: "DEDUCTION",
-        inputTypeSnapshot: "FIXED",
-        amount: salarySummary.absentDeductionAmount,
-        baseValue: null,
-      });
-    }
-    const allowances = componentValues
-      .filter((item) => item.typeSnapshot === "EARNING")
-      .reduce((sum, item) => sum + item.amount, 0);
-    const deductions = componentValues
-      .filter((item) => item.typeSnapshot === "DEDUCTION")
-      .reduce((sum, item) => sum + item.amount, 0);
-    const totalSalary = basicSalary + allowances - deductions;
+    componentValues.push(...getAutomaticPayrollComponents(salarySummary, overtimeSummary.totalAmount));
+    const { allowances, deductions, totalSalary } = getPayrollTotals(basicSalary, componentValues);
 
     updateData.totalSalary = totalSalary;
     updateData.tenantId = salarySummary.tenantId;
@@ -195,6 +130,8 @@ export async function PUT(req: Request, { params }: Params) {
     updateData.lateDeductionRate = salarySummary.lateDeductionRate;
     updateData.lateAttendanceDays = salarySummary.lateAttendanceDays;
     updateData.lateDeductionAmount = salarySummary.lateDeductionAmount;
+    updateData.absentAttendanceDays = salarySummary.absentAttendanceDays;
+    updateData.absentDeductionAmount = salarySummary.absentDeductionAmount;
     updateData.allowances = allowances;
     updateData.deductions = deductions;
     if (body.status !== undefined) updateData.status = body.status;

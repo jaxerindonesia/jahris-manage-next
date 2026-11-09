@@ -107,6 +107,16 @@ export const columnFormats: DefaultColumnFormat<PayrollDto>[] = [
     formatter: (_value, row) => row.referenceNumber || "-",
   },
   {
+    key: "salaryType",
+    title: "Jenis Gaji",
+    formatter: (_value, row) => row.salaryType === "daily" ? "Harian" : "Bulanan",
+  },
+  {
+    key: "paidAttendanceDays",
+    title: "Hari Hadir",
+    formatter: (_value, row) => `${row.paidAttendanceDays ?? 0} hari`,
+  },
+  {
     key: "basicSalary",
     title: "Gaji Pokok",
     textClassName: "text-slate-700 dark:text-slate-200",
@@ -114,7 +124,7 @@ export const columnFormats: DefaultColumnFormat<PayrollDto>[] = [
   },
   {
     key: "allowances",
-    title: "Tunjangan",
+    title: "Penghasilan Tambahan",
     textClassName: "text-slate-700 dark:text-slate-200",
     formatter: (value) => `+ ${formatCurrency(Number(value || 0))}`,
   },

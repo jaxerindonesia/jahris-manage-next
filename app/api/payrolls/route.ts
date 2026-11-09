@@ -6,24 +6,7 @@ import prisma from "@/lib/prisma";
 import { ensureTenantScope, requireSessionUser } from "@/lib/auth/tenant";
 import { requirePermission } from "@/lib/auth/permission";
 import { createPayrollForUser } from "@/lib/helper/payroll-create";
-import { AUTO_ABSENT_DEDUCTION_COMPONENT_NAME, AUTO_LATE_DEDUCTION_COMPONENT_NAME, AUTO_OVERTIME_COMPONENT_NAME } from "@/lib/constants/payroll";
-import { getApprovedOvertimePayoutSummary } from "@/lib/helper/payroll-overtime";
-import { getPayrollSalarySummary } from "@/lib/helper/payroll-salary";
-import { lockPayrollJournal, syncPayrollJournal } from "@/lib/helper/payroll-journal";
-
-function buildPayrollReferenceNumber(id: string, createdAt: Date) {
-  return `PYR-${createdAt.getFullYear()}-${id.slice(0, 8).toUpperCase()}`;
-}
-
-function normalizeComponentValues(items: unknown[], basicSalary: number) {
-  return (Array.isArray(items) ? items : []).map((item) => {
-    const row = item as Record<string, unknown>;
-    const inputTypeSnapshot = String(row.inputTypeSnapshot || row.inputType || "MANUAL").toUpperCase();
-    const baseValue = inputTypeSnapshot === "PERCENTAGE" ? Number(row.baseValue ?? row.amount ?? 0) : null;
-    const amount = inputTypeSnapshot === "PERCENTAGE" ? (basicSalary * Number(baseValue || 0)) / 100 : Number(row.amount || 0);
-    return { componentConfigId: row.componentConfigId ? String(row.componentConfigId) : null, nameSnapshot: String(row.nameSnapshot || row.name || "").trim(), typeSnapshot: String(row.typeSnapshot || row.type || "").toUpperCase(), inputTypeSnapshot, amount: Number.isFinite(amount) ? amount : 0, baseValue: baseValue !== null && Number.isFinite(baseValue) ? baseValue : null };
-  }).filter((item) => item.nameSnapshot && ![AUTO_OVERTIME_COMPONENT_NAME, AUTO_LATE_DEDUCTION_COMPONENT_NAME, AUTO_ABSENT_DEDUCTION_COMPONENT_NAME].includes(item.nameSnapshot) && ["EARNING", "DEDUCTION"].includes(item.typeSnapshot));
-}
+import { getPayrollSlipAttendance } from "@/lib/helper/payroll-slip-attendance";
 
 export async function GET(req: NextRequest) {
   try {
@@ -113,9 +96,15 @@ export async function GET(req: NextRequest) {
       prisma.payroll.count({ where }),
     ]);
 
+    const data = searchParams.get("includeAttendance") === "true"
+      ? await Promise.all(payrolls.map(async (payroll) => ({
+          ...payroll, attendanceSummary: await getPayrollSlipAttendance(payroll),
+        })))
+      : payrolls;
+
     return NextResponse.json({
       message: "Payroll retrieved successfully",
-      data: payrolls,
+      data,
       total,
       page,
       limit,
@@ -227,136 +216,14 @@ export async function POST(req: NextRequest) {
         data: { created, skipped, failed: failures.length, failures },
       }, { status: failures.length && created === 0 ? 422 : 201 });
     }
-    const salarySummary = await getPayrollSalarySummary({
-      tenantId: scopedTenantId,
-      userId,
-      month: normalizedMonth,
-      year: normalizedYear,
-      startDate,
-      endDate,
+    const payroll = await createPayrollForUser({
+      tenantId: scopedTenantId, userId, month: normalizedMonth, year: normalizedYear,
+      status, paidAt, startDate, endDate, componentValues, creatorId: auth.user.id,
     });
-    const finalTenantId = salarySummary.tenantId;
-
-    const existing = await prisma.payroll.findFirst({
-      where: {
-        userId,
-        month: normalizedMonth,
-        year: normalizedYear,
-        periodStartDate: startDate ? new Date(`${startDate}T00:00:00.000Z`) : null,
-        periodEndDate: endDate ? new Date(`${endDate}T00:00:00.000Z`) : null,
-        tenantId: finalTenantId,
-      },
-    });
-
-    if (existing) {
-      return NextResponse.json(
-        { message: "Payroll already exists for this user" },
-        { status: 409 },
-      );
+    if (!payroll) {
+      return NextResponse.json({ message: "Payroll already exists for this user" }, { status: 409 });
     }
-
-    const normalizedBasicSalary = salarySummary.basicSalary;
-    const normalizedComponentValues = normalizeComponentValues(componentValues, normalizedBasicSalary);
-    const overtimeSummary = await getApprovedOvertimePayoutSummary({
-      tenantId: salarySummary.tenantId,
-      userId,
-      month: normalizedMonth,
-      year: normalizedYear,
-      startDate,
-      endDate,
-    });
-    if (overtimeSummary.totalAmount > 0) {
-      normalizedComponentValues.push({
-        componentConfigId: null,
-        nameSnapshot: AUTO_OVERTIME_COMPONENT_NAME,
-        typeSnapshot: "EARNING",
-        inputTypeSnapshot: "FIXED",
-        amount: overtimeSummary.totalAmount,
-        baseValue: null,
-      });
-    }
-    if (salarySummary.lateDeductionAmount > 0) {
-      normalizedComponentValues.push({
-        componentConfigId: null,
-        nameSnapshot: AUTO_LATE_DEDUCTION_COMPONENT_NAME,
-        typeSnapshot: "DEDUCTION",
-        inputTypeSnapshot: "FIXED",
-        amount: salarySummary.lateDeductionAmount,
-        baseValue: null,
-      });
-    }
-    if (salarySummary.absentDeductionAmount > 0) {
-      normalizedComponentValues.push({
-        componentConfigId: null,
-        nameSnapshot: AUTO_ABSENT_DEDUCTION_COMPONENT_NAME,
-        typeSnapshot: "DEDUCTION",
-        inputTypeSnapshot: "FIXED",
-        amount: salarySummary.absentDeductionAmount,
-        baseValue: null,
-      });
-    }
-    const allowances = normalizedComponentValues
-      .filter((item) => item.typeSnapshot === "EARNING")
-      .reduce((sum, item) => sum + item.amount, 0);
-    const deductions = normalizedComponentValues
-      .filter((item) => item.typeSnapshot === "DEDUCTION")
-      .reduce((sum, item) => sum + item.amount, 0);
-    const totalSalary = normalizedBasicSalary + allowances - deductions;
-    const payrollWithReference = await prisma.$transaction(async (tx) => {
-      await lockPayrollJournal(tx, finalTenantId);
-      const payroll = await tx.payroll.create({
-        data: {
-          tenantId: finalTenantId,
-          userId,
-          month: normalizedMonth,
-          year: normalizedYear,
-          periodStartDate: startDate ? new Date(`${startDate}T00:00:00.000Z`) : null,
-          periodEndDate: endDate ? new Date(`${endDate}T00:00:00.000Z`) : null,
-          basicSalary: normalizedBasicSalary,
-          salaryType: salarySummary.salaryType,
-          salaryRate: salarySummary.salaryRate,
-          paidAttendanceDays: salarySummary.paidAttendanceDays,
-          lateDeductionRate: salarySummary.lateDeductionRate,
-          lateAttendanceDays: salarySummary.lateAttendanceDays,
-          lateDeductionAmount: salarySummary.lateDeductionAmount,
-          allowances,
-          deductions,
-          totalSalary,
-          status,
-          paidAt: paidAt ? new Date(paidAt) : null,
-        },
-      });
-      const updated = await tx.payroll.update({
-        where: { id: payroll.id },
-        data: { referenceNumber: buildPayrollReferenceNumber(payroll.id, payroll.createdAt) },
-      });
-      if (normalizedComponentValues.length > 0) {
-        await tx.payrollComponentValue.createMany({
-          data: normalizedComponentValues.map((item) => ({
-            payrollId: payroll.id,
-            componentConfigId: item.componentConfigId,
-            nameSnapshot: item.nameSnapshot,
-            typeSnapshot: item.typeSnapshot,
-            inputTypeSnapshot: item.inputTypeSnapshot,
-            amount: item.amount,
-            baseValue: item.baseValue,
-          })),
-        });
-      }
-      await syncPayrollJournal(tx, updated, auth.user.id);
-      return updated;
-    });
-
-    return NextResponse.json(
-      {
-        message: "Payroll successfully created.",
-        data: {
-          ...payrollWithReference,
-          componentValues: normalizedComponentValues,
-        },
-      },
-      { status: 201 },
-    );
+    return NextResponse.json({ message: "Payroll successfully created.", data: payroll }, { status: 201 });
   } catch (error) {
     console.error("[POST /api/payrolls] Failed to create payroll:", error);
     return NextResponse.json(

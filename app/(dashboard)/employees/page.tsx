@@ -11,10 +11,8 @@ import DynamicPage from "@/components/dynamic-page";
 import { formatDateId } from "@/lib/helper/date";
 import { parseApiError } from "@/lib/helper/response-api";
 import type { EmployeeRecapDto } from "@/lib/dto/employee-recap";
-import {
-  buildEmployeeRecapPrintHtml,
-  waitForEmployeeRecapImages,
-} from "@/lib/helper/employee-recap-print";
+import { buildEmployeeRecapPrintHtml } from "@/lib/helper/employee-recap-print";
+import { waitForPrintImages } from "@/lib/helper/print";
 import {
   columnFormats,
   type DepartmentOption,
@@ -355,7 +353,7 @@ export default function EmployeesPage() {
         }
       `;
       document.head.appendChild(style);
-      await waitForEmployeeRecapImages(printDiv);
+      await waitForPrintImages(printDiv);
 
       const oldTitle = document.title;
       document.title = "startDate" in period

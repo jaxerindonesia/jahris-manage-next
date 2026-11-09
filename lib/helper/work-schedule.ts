@@ -50,6 +50,41 @@ async function getTenantLateTolerance(prisma: SchedulePrisma, tenantId: string) 
   return config?.lateToleranceMinutes ?? 15;
 }
 
+export async function getScheduledWorkDays(
+  prisma: SchedulePrisma,
+  userId: string,
+  range: { gte: Date; lt: Date },
+) {
+  const branch = await prisma.branch.findFirst({
+    where: { users: { some: { id: userId } }, isActive: true },
+    select: { id: true, scheduleType: true, workingSchedules: true },
+  });
+  if (!branch) return [];
+
+  if (branch.scheduleType === "SHIFT") {
+    const assignments = await prisma.employeeShiftSchedule.findMany({
+      where: { userId, branchId: branch.id, workDate: range, isDayOff: false, shift: { isActive: true } },
+      select: { workDate: true, shift: { select: { endTime: true, crossesMidnight: true } } },
+    });
+    return assignments.flatMap(({ workDate, shift }) => shift ? [{
+      workDate,
+      endAt: jakartaDateAtTime(workDate, shift.endTime, shift.crossesMidnight),
+    }] : []);
+  }
+
+  const schedules = new Map(branch.workingSchedules.map((schedule) => [schedule.dayOfWeek, schedule]));
+  const days = [];
+  for (let day = new Date(range.gte); day < range.lt; day.setUTCDate(day.getUTCDate() + 1)) {
+    const schedule = schedules.get(WORK_DAY_CODES[day.getUTCDay()]);
+    if (!schedule?.isWorkDay || !schedule.startTime || !schedule.endTime) continue;
+    days.push({
+      workDate: new Date(day),
+      endAt: jakartaDateAtTime(day, schedule.endTime, schedule.endTime <= schedule.startTime),
+    });
+  }
+  return days;
+}
+
 export async function resolveWorkSchedule(
   prisma: SchedulePrisma,
   userId: string,

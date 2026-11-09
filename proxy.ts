@@ -10,7 +10,7 @@ const cspBase =
 const createNonce = () => crypto.randomUUID().replace(/-/g, "");
 
 const applyCspHeaders = (response: NextResponse, nonce: string) => {
-  const csp = `${cspBase}; script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`;
+  const csp = `${cspBase}; script-src 'self' 'nonce-${nonce}' 'strict-dynamic'; worker-src 'self'`;
   response.headers.set("Content-Security-Policy", csp);
   response.headers.set("x-nonce", nonce);
 };
@@ -27,7 +27,7 @@ export async function proxy(request: NextRequest) {
   const token = request.cookies.get("token")?.value || bearerToken;
   const { pathname } = request.nextUrl;
 
-  if (pathname.startsWith("/models/")) {
+  if (pathname.startsWith("/models/") || pathname.startsWith("/pdfjs/")) {
     const response = NextResponse.next();
     response.headers.set("Cache-Control", "public, max-age=31536000, immutable");
     return response;
