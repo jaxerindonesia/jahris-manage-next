@@ -2,7 +2,10 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { getJakartaDayKey } from "@/lib/helper/date";
+import { getJakartaDayKey, getJakartaDayRange } from "@/lib/helper/date";
+import { isAuthorizedCron } from "@/lib/auth/cron";
+import { getAttendanceCronDay } from "@/lib/helper/attendance-cron";
+import { getScheduledWorkDays } from "@/lib/helper/work-schedule";
 import { getNationalHolidayByDate } from "@/lib/helper/holiday";
 import {
   AUTO_ABSENT_NOTE,
@@ -23,32 +26,6 @@ const WEEKDAY_MAP = [
   "SATURDAY",
 ] as const;
 
-function isAuthorizedCron(req: NextRequest) {
-  const cronSecret = process.env.CRON_SECRET;
-  if (!cronSecret) return false;
-  const authHeader = req.headers.get("authorization") || "";
-  return authHeader === `Bearer ${cronSecret}`;
-}
-
-function getPreviousJakartaDayRange(nowUtc = new Date()) {
-  const shifted = new Date(
-    nowUtc.getTime() + JAKARTA_UTC_OFFSET_HOURS * 60 * 60 * 1000,
-  );
-
-  const y = shifted.getUTCFullYear();
-  const m = shifted.getUTCMonth();
-  const d = shifted.getUTCDate() - 1;
-
-  const startUtc = new Date(
-    Date.UTC(y, m, d, -JAKARTA_UTC_OFFSET_HOURS, 0, 0, 0),
-  );
-  const endUtc = new Date(
-    Date.UTC(y, m, d, 23 - JAKARTA_UTC_OFFSET_HOURS, 59, 59, 999),
-  );
-
-  return { startUtc, endUtc };
-}
-
 function getDurationString(start: Date, end: Date) {
   const totalMinutes = Math.max(
     0,
@@ -65,7 +42,12 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
 
-    const { startUtc, endUtc } = getPreviousJakartaDayRange();
+    let targetDay: Date;
+    try { targetDay = getAttendanceCronDay(req.nextUrl.searchParams.get("date")); }
+    catch { return NextResponse.json({ message: "Tanggal cron tidak valid atau belum lewat" }, { status: 400 }); }
+    const dryRun = req.nextUrl.searchParams.get("dryRun") === "true";
+    const now = new Date();
+    const { startUtc, endUtc } = getJakartaDayRange(targetDay);
     const targetDayCode = WEEKDAY_MAP[
       new Date(
         startUtc.getTime() + JAKARTA_UTC_OFFSET_HOURS * 60 * 60 * 1000,
@@ -160,31 +142,18 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    const branchIds = [...new Set(eligibleUsers.map((user) => user.branchId).filter(Boolean))] as string[];
-    const [regularSchedules, shiftSchedules] = await Promise.all([
-      prisma.branchWorkingSchedule.findMany({ where: { branchId: { in: branchIds }, dayOfWeek: targetDayCode, isWorkDay: true }, select: { branchId: true } }),
-      prisma.employeeShiftSchedule.findMany({
-        where: {
-          workDate: attendanceDay,
-          isDayOff: false,
-          userId: { in: eligibleUsers.map((user) => user.id) },
-          shift: { isActive: true },
-        },
-        select: { userId: true, branchId: true },
-      }),
-    ]);
-    const regularBranchIds = new Set(regularSchedules.map((schedule) => schedule.branchId));
-    const shiftBranchByUserId = new Map(
-      shiftSchedules.map((schedule) => [schedule.userId, schedule.branchId]),
+    const nextDay = new Date(targetDay);
+    nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+    const scheduledEndByUser = new Map<string, Date>();
+    for (const user of eligibleUsers) {
+      if (!user.branchId || !user.branch?.isActive) continue;
+      const schedules = await getScheduledWorkDays(prisma, user.id, { gte: targetDay, lt: nextDay });
+      const schedule = schedules.find((day) => day.workDate.getTime() === targetDay.getTime());
+      if (schedule && schedule.endAt <= now) scheduledEndByUser.set(user.id, schedule.endAt);
+    }
+    const usersToProcess = eligibleUsers.filter((user) =>
+      overtimeByUserId.has(user.id) || scheduledEndByUser.has(user.id),
     );
-    const usersToProcess = eligibleUsers.filter((user) => {
-      if (overtimeByUserId.has(user.id)) return true;
-      if (!user.branchId || !user.branch?.isActive) return false;
-      if (user.branch.scheduleType === "SHIFT") {
-        return shiftBranchByUserId.get(user.id) === user.branchId;
-      }
-      return regularBranchIds.has(user.branchId);
-    });
 
     if (usersToProcess.length === 0) {
       return NextResponse.json({
@@ -212,6 +181,7 @@ export async function GET(req: NextRequest) {
         checkOut: true,
         status: true,
         notes: true,
+        updatedAt: true,
       },
     });
 
@@ -222,6 +192,7 @@ export async function GET(req: NextRequest) {
       ? await prisma.submission.findMany({
           where: {
             status: "APPROVED",
+            deletedAt: null,
             userId: {
               in: usersWithoutAttendance.map((user) => user.id),
             },
@@ -281,6 +252,7 @@ export async function GET(req: NextRequest) {
         branchId: u.branchId ?? null,
         date: startUtc,
         attendanceDay,
+        scheduledEndAt: scheduledEndByUser.get(u.id) ?? null,
         status: submissionTypeByUserId.get(u.id) ?? "Absent",
         notes: submissionTypeByUserId.has(u.id)
           ? AUTO_SUBMISSION_ATTENDANCE_NOTE
@@ -289,7 +261,7 @@ export async function GET(req: NextRequest) {
         };
       });
 
-    const attendancesToUpdate: ReturnType<typeof prisma.attendance.update>[] = [];
+    const attendancesToUpdate: ReturnType<typeof prisma.attendance.updateMany>[] = [];
 
     existingAttendances.forEach((attendance) => {
         const overtime = overtimeByUserId.get(attendance.userId);
@@ -304,8 +276,8 @@ export async function GET(req: NextRequest) {
           ? new Date(Math.max(new Date(attendance.checkOut).getTime(), overtime.endTime.getTime()))
           : overtime.endTime;
 
-        attendancesToUpdate.push(prisma.attendance.update({
-          where: { id: attendance.id },
+        attendancesToUpdate.push(prisma.attendance.updateMany({
+          where: { id: attendance.id, updatedAt: attendance.updatedAt },
           data: {
             date: nextCheckIn,
             checkIn: nextCheckIn,
@@ -317,21 +289,28 @@ export async function GET(req: NextRequest) {
         }));
       });
 
-    if (attendanceToCreate.length > 0) {
-      await prisma.attendance.createMany({
+    let created = 0;
+    if (!dryRun && attendanceToCreate.length > 0) {
+      const result = await prisma.attendance.createMany({
         data: attendanceToCreate,
         skipDuplicates: true,
       });
+      created = result.count;
     }
 
-    if (attendancesToUpdate.length > 0) {
-      await prisma.$transaction(attendancesToUpdate);
+    let updated = 0;
+    if (!dryRun && attendancesToUpdate.length > 0) {
+      const results = await prisma.$transaction(attendancesToUpdate);
+      updated = results.reduce((total, result) => total + result.count, 0);
     }
 
     return NextResponse.json({
       message: "Attendance absent job completed",
-      created: attendanceToCreate.length,
-      updated: attendancesToUpdate.length,
+      dryRun,
+      eligibleToCreate: attendanceToCreate.length,
+      eligibleToUpdate: attendancesToUpdate.length,
+      created,
+      updated,
       targetDateStart: startUtc.toISOString(),
       targetDateEnd: endUtc.toISOString(),
       checkedUsers: usersToProcess.length,

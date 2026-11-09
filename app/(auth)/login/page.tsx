@@ -10,7 +10,6 @@ import {
   Lock,
   AlertCircle,
   ArrowRight,
-  Sparkles,
   Shield,
   X,
 } from "lucide-react";
@@ -162,7 +161,6 @@ export default function LoginPage() {
                     Selamat Datang
                   </h2>
                   <p className="mx-auto flex max-w-[320px] items-center justify-center gap-2 text-sm leading-6 text-gray-400 sm:max-w-none sm:leading-normal">
-                    <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-blue-400 sm:mt-0" />
                     <span>Satu akses untuk semua aktivitas kerja</span>
                   </p>
                 </div>
@@ -386,7 +384,6 @@ export default function LoginPage() {
               {/* Main Headline */}
               <div className="space-y-4">
                 <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-blue-500/20 backdrop-blur-sm border border-blue-500/30">
-                  <Sparkles className="w-4 h-4 text-blue-400" />
                   <span className="text-sm font-semibold text-blue-300">
                     Platform HR Jaxer Grup Indonesia
                   </span>
