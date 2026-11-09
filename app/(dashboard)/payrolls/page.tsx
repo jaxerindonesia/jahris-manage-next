@@ -332,6 +332,7 @@ export default function Page() {
       setIsExporting(true);
       printWindow.document.write("<p style='font-family:Arial;padding:24px'>Menyiapkan PDF seluruh slip payroll...</p>");
       const params = buildPayrollExportParams({ startDate, endDate }, debouncedSearchTerm, filterStatus);
+      params.set("includeAttendance", "true");
       const res = await fetch(`/api/payrolls?${params.toString()}`);
       if (!res.ok) throw new Error(await parseApiError(res, "Gagal mengambil seluruh payroll"));
       const json = await res.json();

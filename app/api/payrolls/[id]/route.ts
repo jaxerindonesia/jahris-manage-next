@@ -11,6 +11,7 @@ import {
   getApprovedOvertimePayoutSummary,
 } from "@/lib/helper/payroll-overtime";
 import { getPayrollSalarySummary } from "@/lib/helper/payroll-salary";
+import { getPayrollSlipAttendance } from "@/lib/helper/payroll-slip-attendance";
 import { lockPayrollJournal, syncPayrollJournal } from "@/lib/helper/payroll-journal";
 
 type Params = {
@@ -47,7 +48,8 @@ export async function GET(_: Request, { params }: Params) {
       );
     }
 
-    return NextResponse.json({ message: "Success", data: item });
+    const attendanceSummary = await getPayrollSlipAttendance(item);
+    return NextResponse.json({ message: "Success", data: { ...item, attendanceSummary } });
   } catch {
     return NextResponse.json(
       { message: "Failed to retrieve payroll" },

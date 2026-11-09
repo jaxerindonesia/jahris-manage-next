@@ -18,6 +18,10 @@ export interface PayrollDto {
     lateDeductionAmount?: number;
     absentAttendanceDays?: number;
     absentDeductionAmount?: number;
+    attendanceSummary?: {
+        absentDays: number;
+        submissionDays: { name: string; days: number; calendarDays: number }[];
+    };
     allowances: number;
     deductions: number;
     totalSalary: number;
