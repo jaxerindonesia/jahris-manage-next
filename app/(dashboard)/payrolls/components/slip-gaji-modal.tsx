@@ -294,11 +294,27 @@ function SlipContent({
                 <div className="mb-5 grid grid-cols-3 gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm">
                     <div><p className="text-xs text-gray-500">Jenis Gaji</p><p className="font-semibold">{payroll.salaryType === "daily" ? "Harian" : "Bulanan"}</p></div>
                     <div><p className="text-xs text-gray-500">Hari Hadir</p><p className="font-semibold">{payroll.paidAttendanceDays ?? 0} hari</p></div>
-                    <div><p className="text-xs text-gray-500">Tidak Hadir</p><p className="font-semibold">{payroll.absentAttendanceDays ?? 0} hari</p></div>
+                    <div><p className="text-xs text-gray-500">Tidak Hadir / Alpha</p><p className="font-semibold">{payroll.attendanceSummary?.absentDays ?? payroll.absentAttendanceDays ?? 0} hari</p></div>
                     {payroll.salaryType === "daily" && (
                         <p className="col-span-3 text-xs text-gray-600">Gaji pokok dihitung hanya dari hari hadir pada periode ini. Hari tidak masuk tidak menambah gaji pokok.</p>
                     )}
                 </div>
+                {payroll.attendanceSummary && (
+                    <div className="mb-5 rounded-lg border border-gray-200 p-3 text-sm">
+                        <p className="mb-3 font-semibold">Rekap Ketidakhadiran</p>
+                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                            {payroll.attendanceSummary.submissionDays.map((item) => (
+                                <div key={item.name}>
+                                    <p className="text-xs text-gray-500">{item.name}</p>
+                                    <p className="font-semibold">{item.days} hari kerja</p>
+                                    <p className="mt-1 text-xs text-gray-500">Pengajuan disetujui: {item.calendarDays} hari kalender</p>
+                                </div>
+                            ))}
+                            <div><p className="text-xs text-gray-500">Tidak Hadir / Alpha</p><p className="font-semibold">{payroll.attendanceSummary.absentDays} hari kerja</p></div>
+                        </div>
+                        <p className="mt-3 text-xs text-gray-500">Pengajuan disetujui mencakup seluruh tanggal dalam periode payroll, termasuk tanggal mendatang. Hari kerja mengikuti jadwal cabang atau shift dan mengecualikan hari libur nasional. Alpha dihitung setelah jadwal kerja selesai.</p>
+                    </div>
+                )}
                 <table className="w-full">
                     <thead>
                         <tr className="border-b-2 border-gray-200">

@@ -6,6 +6,7 @@ import prisma from "@/lib/prisma";
 import { ensureTenantScope, requireSessionUser } from "@/lib/auth/tenant";
 import { requirePermission } from "@/lib/auth/permission";
 import { createPayrollForUser } from "@/lib/helper/payroll-create";
+import { getPayrollSlipAttendance } from "@/lib/helper/payroll-slip-attendance";
 
 export async function GET(req: NextRequest) {
   try {
@@ -95,9 +96,15 @@ export async function GET(req: NextRequest) {
       prisma.payroll.count({ where }),
     ]);
 
+    const data = searchParams.get("includeAttendance") === "true"
+      ? await Promise.all(payrolls.map(async (payroll) => ({
+          ...payroll, attendanceSummary: await getPayrollSlipAttendance(payroll),
+        })))
+      : payrolls;
+
     return NextResponse.json({
       message: "Payroll retrieved successfully",
-      data: payrolls,
+      data,
       total,
       page,
       limit,
