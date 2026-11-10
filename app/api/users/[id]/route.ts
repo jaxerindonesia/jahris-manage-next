@@ -11,6 +11,7 @@ import { requirePermission } from "@/lib/auth/permission";
 import { writeAuditLog } from "@/lib/security/audit-log";
 import { validateUserAssignment } from "@/lib/helper/user-assignment-validation";
 import { parseFaceDescriptor } from "@/lib/helper/face-descriptor";
+import { JOIN_DATE_ERROR_MESSAGE, parseJoinDate } from "@/lib/helper/join-date";
 
 // Helper: hapus file avatar lama dari MinIO
 async function deleteOldAvatar(avatarUrl: string | null) {
@@ -164,7 +165,11 @@ export async function PUT(req: Request, { params }: Params) {
     }
 
     if (body.joinDate) {
-      updateData.joinDate = new Date(body.joinDate);
+      const parsedJoinDate = parseJoinDate(body.joinDate);
+      if (!parsedJoinDate) {
+        return NextResponse.json({ message: JOIN_DATE_ERROR_MESSAGE }, { status: 400 });
+      }
+      updateData.joinDate = parsedJoinDate;
     }
 
     if (body.password) {

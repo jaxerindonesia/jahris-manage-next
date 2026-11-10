@@ -9,6 +9,7 @@ import { requireSessionUser, ensureTenantScope } from "@/lib/auth/tenant";
 import { requirePermission } from "@/lib/auth/permission";
 import { validateUserAssignment } from "@/lib/helper/user-assignment-validation";
 import { parseFaceDescriptor } from "@/lib/helper/face-descriptor";
+import { JOIN_DATE_ERROR_MESSAGE, parseJoinDate } from "@/lib/helper/join-date";
 
 export async function GET(req: NextRequest) {
   try {
@@ -173,6 +174,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const parsedJoinDate = parseJoinDate(joinDate);
+    if (parsedJoinDate === undefined) {
+      return NextResponse.json({ message: JOIN_DATE_ERROR_MESSAGE }, { status: 400 });
+    }
+
     const scopedTenantId = ensureTenantScope(auth.user);
     const finalTenantId = scopedTenantId ?? tenantId ?? null;
 
@@ -225,7 +231,7 @@ export async function POST(req: NextRequest) {
         nik,
         phone,
         position,
-        joinDate: joinDate ? new Date(joinDate) : null,
+        joinDate: parsedJoinDate,
         salary,
         salaryType: salaryType || "monthly",
         gender: gender || null,
