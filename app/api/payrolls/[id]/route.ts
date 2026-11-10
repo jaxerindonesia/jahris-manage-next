@@ -13,6 +13,8 @@ import {
 import { getPayrollSalarySummary } from "@/lib/helper/payroll-salary";
 import { getPayrollSlipAttendance } from "@/lib/helper/payroll-slip-attendance";
 import { lockPayrollJournal, syncPayrollJournal } from "@/lib/helper/payroll-journal";
+import { writeAuditLog } from "@/lib/security/audit-log";
+import { diffActivityLogFields, pickActivityLogFields } from "@/lib/helper/activity-log-diff";
 
 type Params = {
   params: {
@@ -69,7 +71,7 @@ export async function PUT(req: Request, { params }: Params) {
 
     const existing = await prisma.payroll.findFirst({
       where: { id: p.id, ...(scopedTenantId ? { tenantId: scopedTenantId } : {}) },
-      select: { id: true, userId: true, month: true, year: true, tenantId: true, periodStartDate: true, periodEndDate: true, componentValues: true },
+      include: { componentValues: true },
     });
     if (!existing) return NextResponse.json({ message: "Payroll not found" }, { status: 404 });
 
@@ -158,6 +160,20 @@ export async function PUT(req: Request, { params }: Params) {
       return updated;
     });
 
+    await writeAuditLog({
+      action: "payrolls.update",
+      status: "success",
+      request: req,
+      actorUserId: auth.user.id,
+      actorName: auth.user.name,
+      actorRole: auth.user.roleName,
+      tenantId: payroll.tenantId,
+      targetType: "payroll",
+      targetId: payroll.id,
+      message: `Mengubah payroll ${payroll.referenceNumber ?? payroll.id}`,
+      metadata: { changes: diffActivityLogFields(existing, payroll), componentValues: { from: existing.componentValues, to: componentValues } },
+    });
+
     return NextResponse.json({
       message: "Payroll successfully updated",
       data: {
@@ -173,7 +189,7 @@ export async function PUT(req: Request, { params }: Params) {
   }
 }
 
-export async function DELETE(_: Request, { params }: Params) {
+export async function DELETE(req: Request, { params }: Params) {
   const p = await params;
   try {
     const auth = await requireSessionUser();
@@ -184,7 +200,6 @@ export async function DELETE(_: Request, { params }: Params) {
 
     const existing = await prisma.payroll.findFirst({
       where: { id: p.id, ...(scopedTenantId ? { tenantId: scopedTenantId } : {}) },
-      select: { id: true, tenantId: true },
     });
     if (!existing) return NextResponse.json({ message: "Payroll not found" }, { status: 404 });
 
@@ -195,6 +210,20 @@ export async function DELETE(_: Request, { params }: Params) {
         data: { status: "VOID" },
       });
       await tx.payroll.delete({ where: { id: p.id } });
+    });
+
+    await writeAuditLog({
+      action: "payrolls.delete",
+      status: "success",
+      request: req,
+      actorUserId: auth.user.id,
+      actorName: auth.user.name,
+      actorRole: auth.user.roleName,
+      tenantId: existing.tenantId,
+      targetType: "payroll",
+      targetId: existing.id,
+      message: `Menghapus payroll ${existing.referenceNumber ?? existing.id}`,
+      metadata: { before: pickActivityLogFields(existing) },
     });
 
     return NextResponse.json({

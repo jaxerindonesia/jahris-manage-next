@@ -7,6 +7,7 @@ import { ensureTenantScope, requireSessionUser } from "@/lib/auth/tenant";
 import { requirePermission } from "@/lib/auth/permission";
 import { createPayrollForUser } from "@/lib/helper/payroll-create";
 import { getPayrollSlipAttendance } from "@/lib/helper/payroll-slip-attendance";
+import { writeAuditLog } from "@/lib/security/audit-log";
 
 export async function GET(req: NextRequest) {
   try {
@@ -211,6 +212,19 @@ export async function POST(req: NextRequest) {
           failures.push(employee.name);
         }
       }
+      await writeAuditLog({
+        action: "payrolls.bulk_create",
+        status: "success",
+        request: req,
+        actorUserId: auth.user.id,
+        actorName: auth.user.name,
+        actorRole: auth.user.roleName,
+        tenantId: scopedTenantId,
+        targetType: "payroll",
+        targetId: null,
+        message: `Generate payroll massal periode ${normalizedMonth}/${normalizedYear}: ${created} dibuat, ${skipped} dilewati, ${failures.length} gagal`,
+        metadata: { month: normalizedMonth, year: normalizedYear, startDate, endDate, branchId: selectedBranchId, created, skipped, failures },
+      });
       return NextResponse.json({
         message: `${created} payroll berhasil dibuat${skipped ? `, ${skipped} dilewati karena sudah ada` : ""}${failures.length ? `, ${failures.length} gagal` : ""}.`,
         data: { created, skipped, failed: failures.length, failures },
@@ -223,6 +237,19 @@ export async function POST(req: NextRequest) {
     if (!payroll) {
       return NextResponse.json({ message: "Payroll already exists for this user" }, { status: 409 });
     }
+    await writeAuditLog({
+      action: "payrolls.create",
+      status: "success",
+      request: req,
+      actorUserId: auth.user.id,
+      actorName: auth.user.name,
+      actorRole: auth.user.roleName,
+      tenantId: payroll.tenantId,
+      targetType: "payroll",
+      targetId: payroll.id,
+      message: `Membuat payroll ${payroll.referenceNumber ?? payroll.id} periode ${normalizedMonth}/${normalizedYear}`,
+      metadata: { after: payroll },
+    });
     return NextResponse.json({ message: "Payroll successfully created.", data: payroll }, { status: 201 });
   } catch (error) {
     console.error("[POST /api/payrolls] Failed to create payroll:", error);
