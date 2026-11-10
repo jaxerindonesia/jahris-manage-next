@@ -2,8 +2,6 @@ import type { NextRequest } from "next/server";
 import { getRequestIp } from "@/lib/security/request";
 
 type AuditAction =
-  | "attendances.update"
-  | "attendances.delete"
   | "auth.login_success"
   | "auth.login_failed"
   | "auth.logout"
