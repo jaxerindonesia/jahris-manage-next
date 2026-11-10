@@ -1,6 +1,7 @@
 "use client";
 
-import { CheckCircle, Download, Edit, Filter, Plus, Printer, Trash2, X, XCircle } from "lucide-react";
+import { useState } from "react";
+import { CheckCircle, Download, Edit, FileText, Filter, Plus, Printer, Trash2, X, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { DefaultColumnFormat } from "@/components/dynamic-page";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -9,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ReimbursementDto } from "@/lib/dto/reimbursement";
 import { getReimbursementDetails, getReceiptUrls, REIMBURSEMENT_CATEGORIES } from "@/lib/helper/reimbursement";
+import { isPdfUrl } from "@/lib/helper/attachment";
 import { formatDateId } from "@/lib/helper/date";
 
 export const itemsPerPageOptions = [5, 10, 25, 50, 100];
@@ -64,6 +66,49 @@ export const STATUS_COLOR: Record<string, string> = {
 const modelName = "reimbursements";
 
 const CATEGORIES = REIMBURSEMENT_CATEGORIES;
+
+function ReceiptThumbnail({ url, index }: { url: string; index: number }) {
+  const [failed, setFailed] = useState(false);
+  const label = `Bukti ${index + 1}`;
+
+  if (isPdfUrl(url)) {
+    return (
+      <a
+        href={url}
+        target="_blank"
+        rel="noreferrer"
+        title={`Buka ${label} (PDF)`}
+        className="flex h-10 w-10 flex-col items-center justify-center gap-0.5 rounded-lg border border-red-200 bg-red-50 text-red-600 shadow-sm transition-all hover:scale-105 hover:border-red-400 hover:shadow-md dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-400"
+      >
+        <FileText className="h-4 w-4" />
+        <span className="text-[8px] font-semibold leading-none">PDF</span>
+      </a>
+    );
+  }
+
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noreferrer"
+      title={`Lihat ${label}`}
+      className="group relative block h-10 w-10 overflow-hidden rounded-lg border border-gray-200 shadow-sm transition-all hover:scale-105 hover:shadow-md hover:border-blue-400 dark:border-gray-600"
+    >
+      {failed ? (
+        <span className="flex h-full w-full items-center justify-center bg-gray-100 px-0.5 text-center text-[9px] leading-tight text-gray-400 dark:bg-gray-700">
+          {label}
+        </span>
+      ) : (
+        <img
+          src={url}
+          alt={label}
+          className="h-full w-full object-cover"
+          onError={() => setFailed(true)}
+        />
+      )}
+    </a>
+  );
+}
 
 export const columnFormats: DefaultColumnFormat<ReimbursementDto>[] = [
   {
@@ -124,31 +169,7 @@ export const columnFormats: DefaultColumnFormat<ReimbursementDto>[] = [
       return (
         <div className="flex flex-wrap gap-1.5">
           {allUrls.map((url, i) => (
-            <a
-              key={`${i}-${url}`}
-              href={url}
-              target="_blank"
-              rel="noreferrer"
-              title={`Lihat bukti ${i + 1}`}
-              className="group relative block h-10 w-10 overflow-hidden rounded-lg border border-gray-200 shadow-sm transition-all hover:scale-105 hover:shadow-md hover:border-blue-400 dark:border-gray-600"
-            >
-              <img
-                src={url}
-                alt={`Bukti ${i + 1}`}
-                className="h-full w-full object-cover"
-                onError={(e) => {
-                  const target = e.currentTarget as HTMLImageElement;
-                  target.style.display = "none";
-                  const parent = target.parentElement;
-                  if (parent && !parent.querySelector(".fallback-icon")) {
-                    const fallback = document.createElement("div");
-                    fallback.className = "fallback-icon flex h-full w-full items-center justify-center bg-gray-100 dark:bg-gray-700 text-gray-400 text-[9px] text-center leading-tight px-0.5";
-                    fallback.textContent = `Bukti ${i + 1}`;
-                    parent.appendChild(fallback);
-                  }
-                }}
-              />
-            </a>
+            <ReceiptThumbnail key={`${i}-${url}`} url={url} index={i} />
           ))}
         </div>
       );

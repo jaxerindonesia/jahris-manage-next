@@ -490,6 +490,8 @@ model Payroll {
   lateDeductionRate   Float                   @default(0) @map("late_deduction_rate")
   lateAttendanceDays  Int                     @default(0) @map("late_attendance_days")
   lateDeductionAmount Float                   @default(0) @map("late_deduction_amount")
+  absentAttendanceDays Int                    @default(0) @map("absent_attendance_days")
+  absentDeductionAmount Float                  @default(0) @map("absent_deduction_amount")
   allowances          Float                   @default(0)
   deductions          Float                   @default(0)
   totalSalary         Float                   @map("total_salary")

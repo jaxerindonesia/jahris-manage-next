@@ -1,5 +1,7 @@
 import type { ReimbursementDetailDto } from "@/lib/dto/reimbursement";
 
+export type ReimbursementReceiptLayout = "two" | "one";
+
 export type ReimbursementDetailForm = Omit<ReimbursementDetailDto, "description"> & {
   key: string;
   description: string;

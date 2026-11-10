@@ -17,6 +17,7 @@ import SummaryCard from "./components/summary-card";
 import type { ApiResponse } from "@/lib/utils";
 import { parseApiError } from "@/lib/helper/response-api";
 import { buildPayrollBulkPrintHtml } from "@/lib/helper/payroll-bulk-print";
+import { getPayrollComponentDescription, getPayrollSalaryDescription } from "@/lib/helper/payroll-description";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import ExportPeriodDialog, { type ExportPeriod } from "@/components/export-period-dialog";
@@ -273,8 +274,16 @@ export default function Page() {
         Periode: emp.periodStartDate && emp.periodEndDate
           ? `${new Date(emp.periodStartDate).toLocaleDateString("id-ID")} s/d ${new Date(emp.periodEndDate).toLocaleDateString("id-ID")}`
           : "-",
+        "Jenis Gaji": emp.salaryType === "daily" ? "Harian" : "Bulanan",
+        "Tarif Gaji": emp.salaryRate ?? 0,
+        "Hari Hadir": emp.paidAttendanceDays ?? 0,
+        "Tidak Hadir": emp.absentAttendanceDays ?? 0,
+        "Hari Terlambat": emp.lateAttendanceDays ?? 0,
+        "Potongan Terlambat": emp.lateDeductionAmount ?? 0,
+        "Potongan Tidak Hadir": emp.absentDeductionAmount ?? 0,
+        "Perhitungan Gaji Pokok": getPayrollSalaryDescription(emp),
         "Gaji Pokok": emp.basicSalary,
-        Tunjangan: emp.allowances,
+        "Penghasilan Tambahan": emp.allowances,
         Potongan: emp.deductions,
         "Total Gaji": emp.totalSalary,
         Status: emp.status === "PAID" ? "Dibayar" : "Pending",
@@ -283,6 +292,17 @@ export default function Page() {
       const worksheet = XLSX.utils.json_to_sheet(rows);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "Data Payroll");
+      const componentRows = allData.flatMap((payroll) => (payroll.componentValues ?? []).map((component) => ({
+        "Nomor Referensi": payroll.referenceNumber ?? "-",
+        "Nama Karyawan": payroll.user?.name ?? "-",
+        Komponen: component.nameSnapshot,
+        Jenis: component.typeSnapshot === "EARNING" ? "Penghasilan" : "Potongan",
+        Keterangan: getPayrollComponentDescription(component, payroll),
+        Nominal: component.amount,
+      })));
+      if (componentRows.length) {
+        XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(componentRows), "Rincian Komponen");
+      }
 
       const fileName = `data-payroll-${startDate}_${endDate}.xlsx`;
       XLSX.writeFile(workbook, fileName);
@@ -312,6 +332,7 @@ export default function Page() {
       setIsExporting(true);
       printWindow.document.write("<p style='font-family:Arial;padding:24px'>Menyiapkan PDF seluruh slip payroll...</p>");
       const params = buildPayrollExportParams({ startDate, endDate }, debouncedSearchTerm, filterStatus);
+      params.set("includeAttendance", "true");
       const res = await fetch(`/api/payrolls?${params.toString()}`);
       if (!res.ok) throw new Error(await parseApiError(res, "Gagal mengambil seluruh payroll"));
       const json = await res.json();

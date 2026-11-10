@@ -27,6 +27,7 @@ import {
   AUTO_OVERTIME_COMPONENT_NAME,
 } from "@/lib/constants/payroll";
 import { Info } from "lucide-react";
+import { getPayrollComponentDescription, getPayrollSalaryDescription } from "@/lib/helper/payroll-description";
 
 const createDefaultFormData = (): PayrollDto => ({
   userId: "",
@@ -203,7 +204,7 @@ export default function FormData({
         month,
         year,
         basicSalary: 0,
-        componentValues: rebuildComponentValues(0, sourceValues, 0, 0),
+        componentValues: rebuildComponentValues(0, sourceValues, 0, 0, 0),
       }));
       return;
     }
@@ -262,7 +263,7 @@ export default function FormData({
         month,
         year,
         basicSalary: 0,
-        componentValues: rebuildComponentValues(0, sourceValues, 0, 0),
+        componentValues: rebuildComponentValues(0, sourceValues, 0, 0, 0),
       }));
     }
   };
@@ -649,18 +650,18 @@ export default function FormData({
 
             {targetMode === "single" && calculationSummary && (
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm dark:border-slate-800 dark:bg-slate-900/40">
-                {calculationSummary.salaryType === "daily" ? (
-                  <p className="text-slate-700 dark:text-slate-300">
-                    Gaji harian: {formatCurrency(calculationSummary.salaryRate)} ×{" "}
-                    {calculationSummary.paidAttendanceDays} hari hadir ={" "}
-                    <span className="font-semibold">
-                      {formatCurrency(calculationSummary.basicSalary)}
-                    </span>
-                  </p>
-                ) : (
-                  <p className="text-slate-700 dark:text-slate-300">
-                    Gaji bulanan: {formatCurrency(calculationSummary.basicSalary)}
-                  </p>
+                <p className="font-medium text-slate-700 dark:text-slate-300">
+                  Jenis gaji: {calculationSummary.salaryType === "daily" ? "Harian" : "Bulanan"}
+                </p>
+                <p className="mt-1 text-slate-700 dark:text-slate-300">{getPayrollSalaryDescription(calculationSummary)}</p>
+                <p className="mt-1 text-slate-600 dark:text-slate-400">
+                  Hari hadir: {calculationSummary.paidAttendanceDays} hari. Tidak hadir: {calculationSummary.absentAttendanceDays} hari.
+                </p>
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  Tidak hadir dihitung dari jadwal kerja yang sudah selesai, sejak tanggal bergabung. Hari libur dan izin/cuti dikecualikan.
+                </p>
+                {calculationSummary.salaryType === "daily" && (
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Hari tidak masuk tidak menambah gaji pokok dan tidak dikenai potongan tidak hadir lagi.</p>
                 )}
                 {calculationSummary.lateAttendanceDays > 0 && (
                   <p className="mt-1 text-red-600 dark:text-red-400">
@@ -671,7 +672,7 @@ export default function FormData({
                     </span>
                   </p>
                 )}
-                {calculationSummary.absentAttendanceDays > 0 && (
+                {calculationSummary.salaryType !== "daily" && calculationSummary.absentAttendanceDays > 0 && (
                   <p className="mt-1 text-red-600 dark:text-red-400">
                     Potongan tidak hadir: {calculationSummary.absentAttendanceDays} hari ={" "}
                     <span className="font-semibold">{formatCurrency(calculationSummary.absentDeductionAmount)}</span>
@@ -721,6 +722,9 @@ export default function FormData({
                                 : item.nameSnapshot === AUTO_ABSENT_DEDUCTION_COMPONENT_NAME
                                 ? "Otomatis dari absensi tidak hadir sesuai tarif hari tenant."
                                 : null;
+                          const componentDescription = calculationSummary
+                            ? getPayrollComponentDescription(item, calculationSummary)
+                            : null;
 
                           return (
                             <div key={`${item.componentConfigId || item.nameSnapshot}-${index}`} className="grid grid-cols-1 gap-3 md:grid-cols-12">
@@ -740,6 +744,7 @@ export default function FormData({
                                   </Label>
                                 </div>
                                 <Input value={item.nameSnapshot} disabled />
+                                {componentDescription && <p className="text-xs text-slate-500 dark:text-slate-400">{componentDescription}</p>}
                               </div>
                               <div className="grid gap-2 md:col-span-3">
                                 <div>
@@ -828,7 +833,7 @@ export default function FormData({
                 )}
               </p>
               <p className="mt-1 text-xs text-blue-500 dark:text-blue-300/80">
-                Penghasilan tambahan: {formatCurrency(computedAllowances)} | Potongan: {formatCurrency(computedDeductions)}
+                Penghasilan Tambahan: {formatCurrency(computedAllowances)} | Potongan: {formatCurrency(computedDeductions)}
               </p>
             </div>}
           </div>
