@@ -64,6 +64,10 @@ export const MASTER_PERMISSIONS = [
     actions: ["get-all", "get-by-id", "create", "update", "delete", "export", "import"],
   },
   {
+    model: "activity-logs",
+    actions: ["get-all"],
+  },
+  {
     model: "tenants",
     actions: ["get-all", "get-by-id", "create", "update", "delete"],
   },

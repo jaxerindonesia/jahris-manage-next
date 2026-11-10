@@ -6,6 +6,8 @@ import prisma from "@/lib/prisma";
 import { ensureTenantScope, requireSessionUser } from "@/lib/auth/tenant";
 import { getJakartaDayKey } from "@/lib/helper/date";
 import { requirePermission } from "@/lib/auth/permission";
+import { writeAuditLog } from "@/lib/security/audit-log";
+import { pickActivityLogFields } from "@/lib/helper/activity-log-diff";
 
 export async function GET(req: NextRequest) {
   try {
@@ -107,7 +109,7 @@ export async function POST(req: NextRequest) {
         ...(finalTenantId ? { tenantId: finalTenantId } : { tenantId: null }),
         deletedAt: null,
       },
-      select: { id: true, branchId: true },
+      select: { id: true, branchId: true, name: true },
     });
     if (!targetUser) {
       return NextResponse.json(
@@ -143,6 +145,20 @@ export async function POST(req: NextRequest) {
         status,
         notes,
       },
+    });
+
+    await writeAuditLog({
+      action: "attendances.create",
+      status: "success",
+      request: req,
+      actorUserId: auth.user.id,
+      actorName: auth.user.name,
+      actorRole: auth.user.roleName,
+      tenantId: finalTenantId,
+      targetType: "attendance",
+      targetId: attendance.id,
+      message: `Menambah kehadiran ${targetUser.name} tanggal ${attendanceDay.toISOString().slice(0, 10)} (status ${status})`,
+      metadata: { after: pickActivityLogFields(attendance) },
     });
 
     return NextResponse.json(

@@ -27,6 +27,7 @@ import type { DepartmentDto } from "@/lib/dto/department";
 import type { BranchDto } from "@/lib/dto/branch";
 import { parseApiError } from "@/lib/helper/response-api";
 import FaceCapture from "./face-capture";
+import { getMaxJoinDateInputValue, MIN_JOIN_DATE } from "@/lib/helper/join-date";
 
 type TenantDto = {
   id: string;
@@ -553,6 +554,8 @@ export default function FormData({
                     joinDate: event.target.value,
                   }))
                 }
+                min={MIN_JOIN_DATE}
+                max={getMaxJoinDateInputValue()}
                 required
               />
             </div>

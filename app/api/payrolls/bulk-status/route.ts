@@ -5,6 +5,7 @@ import prisma from "@/lib/prisma";
 import { ensureTenantScope, requireSessionUser } from "@/lib/auth/tenant";
 import { requirePermission } from "@/lib/auth/permission";
 import { lockPayrollJournal, syncPayrollJournal } from "@/lib/helper/payroll-journal";
+import { writeAuditLog } from "@/lib/security/audit-log";
 
 const SAFE_JOURNAL_ERRORS = [
   "Total pembayaran payroll harus lebih dari nol",
@@ -68,6 +69,24 @@ export async function PUT(req: Request) {
       },
       { maxWait: 10_000, timeout: 60_000 },
     );
+
+    for (const tenantId of new Set(payrolls.map((payroll) => payroll.tenantId))) {
+      const tenantPayrollIds = payrolls.filter((payroll) => payroll.tenantId === tenantId).map((payroll) => payroll.id);
+      await writeAuditLog({
+        action: "payrolls.bulk_status",
+        status: "success",
+        request: req,
+        actorUserId: auth.user.id,
+        actorName: auth.user.name,
+        actorRole: auth.user.roleName,
+        tenantId: tenantId,
+        targetType: "payroll",
+        targetId: null,
+        message: `Menandai ${tenantPayrollIds.length} payroll sebagai Dibayar`,
+        metadata: { ids: tenantPayrollIds, status: "PAID", paidAt: paidAt.toISOString() },
+      });
+
+    }
 
     return NextResponse.json({
       message: `${updatedIds.length} payroll berhasil ditandai sebagai Dibayar`,

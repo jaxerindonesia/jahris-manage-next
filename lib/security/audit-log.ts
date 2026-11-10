@@ -1,4 +1,6 @@
 import type { NextRequest } from "next/server";
+import { Prisma } from "@prisma/client";
+import prisma from "@/lib/prisma";
 import { getRequestIp } from "@/lib/security/request";
 
 type AuditAction =
@@ -8,7 +10,18 @@ type AuditAction =
   | "auth.change_password_success"
   | "auth.change_password_failed"
   | "users.import"
+  | "users.create"
+  | "users.update"
   | "users.delete"
+  | "attendances.create"
+  | "attendances.update"
+  | "attendances.delete"
+  | "payrolls.create"
+  | "payrolls.bulk_create"
+  | "payrolls.update"
+  | "payrolls.delete"
+  | "payrolls.bulk_delete"
+  | "payrolls.bulk_status"
   | "roles.delete"
   | "departments.delete"
   | "submissions.approve"
@@ -34,6 +47,8 @@ type AuditAction =
   | "reimbursements.approve"
   | "reimbursements.reject";
 
+export type { AuditAction };
+
 type AuditStatus = "success" | "failed" | "denied";
 
 type AuditLogInput = {
@@ -41,6 +56,7 @@ type AuditLogInput = {
   status: AuditStatus;
   request?: NextRequest | Request;
   actorUserId?: string | null;
+  actorName?: string | null;
   actorRole?: string | null;
   tenantId?: string | null;
   targetType?: string | null;
@@ -49,7 +65,7 @@ type AuditLogInput = {
   metadata?: Record<string, unknown> | null;
 };
 
-export function writeAuditLog(input: AuditLogInput) {
+export async function writeAuditLog(input: AuditLogInput) {
   const requestPath = input.request
     ? new URL(input.request.url).pathname
     : null;
@@ -75,8 +91,29 @@ export function writeAuditLog(input: AuditLogInput) {
 
   if (input.status === "failed" || input.status === "denied") {
     console.warn(serialized);
-    return;
+  } else {
+    console.info(serialized);
   }
 
-  console.info(serialized);
+  try {
+    await prisma.activityLog.create({
+      data: {
+        action: payload.action,
+        status: payload.status,
+        actorUserId: payload.actorUserId,
+        actorName: input.actorName ?? null,
+        actorRole: payload.actorRole,
+        tenantId: payload.tenantId,
+        targetType: payload.targetType,
+        targetId: payload.targetId,
+        ipAddress: payload.ipAddress,
+        method: payload.method,
+        path: payload.path,
+        message: payload.message,
+        metadata: (payload.metadata ?? undefined) as Prisma.InputJsonValue | undefined,
+      },
+    });
+  } catch (error) {
+    console.error("[audit-log] Failed to persist activity log:", error);
+  }
 }
