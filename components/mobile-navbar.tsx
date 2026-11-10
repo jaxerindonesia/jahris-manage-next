@@ -23,6 +23,7 @@ import {
   ListTodo,
   Receipt,
   Shield,
+  History,
   Banknote,
   Clock,
   ChevronDown,
@@ -174,6 +175,13 @@ export default function MobileNavbar() {
       icon: TrendingUp,
       path: "/performances",
       permissions: ["get-all", "get-by-id"],
+    },
+    {
+      id: "activity-logs",
+      name: "Log Aktivitas",
+      icon: History,
+      path: "/activity-logs",
+      permissions: ["get-all"],
     },
   ].filter((item) => {
     if (!("permissions" in item) || !item.permissions) return true;

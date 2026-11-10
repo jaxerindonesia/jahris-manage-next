@@ -8,6 +8,8 @@ import { ensureTenantScope, requireSessionUser } from "@/lib/auth/tenant";
 import { BUCKET_AVATARS, deleteFromMinio } from "@/lib/minio";
 import { getJakartaDayKey } from "@/lib/helper/date";
 import { requirePermission } from "@/lib/auth/permission";
+import { writeAuditLog } from "@/lib/security/audit-log";
+import { diffActivityLogFields, pickActivityLogFields } from "@/lib/helper/activity-log-diff";
 
 type Params = {
   params: {
@@ -58,7 +60,7 @@ export async function PUT(req: Request, { params }: Params) {
 
     const existing = await prisma.attendance.findFirst({
       where: { id: p.id, ...(scopedTenantId ? { tenantId: scopedTenantId } : {}) },
-      select: { id: true },
+      include: { user: { select: { name: true } } },
     });
     if (!existing) return NextResponse.json({ message: "Attendance not found" }, { status: 404 });
 
@@ -85,6 +87,20 @@ export async function PUT(req: Request, { params }: Params) {
       data: updateData,
     });
 
+    await writeAuditLog({
+      action: "attendances.update",
+      status: "success",
+      request: req,
+      actorUserId: auth.user.id,
+      actorName: auth.user.name,
+      actorRole: auth.user.roleName,
+      tenantId: existing.tenantId,
+      targetType: "attendance",
+      targetId: existing.id,
+      message: `Mengubah kehadiran ${existing.user.name} tanggal ${existing.attendanceDay.toISOString().slice(0, 10)}`,
+      metadata: { changes: diffActivityLogFields(existing, attendance) },
+    });
+
     return NextResponse.json({
       message: "Attendance successfully updated",
       data: attendance,
@@ -104,7 +120,7 @@ export async function PUT(req: Request, { params }: Params) {
   }
 }
 
-export async function DELETE(_: Request, { params }: Params) {
+export async function DELETE(req: Request, { params }: Params) {
   const p = await params;
   try {
     const auth = await requireSessionUser();
@@ -115,11 +131,7 @@ export async function DELETE(_: Request, { params }: Params) {
 
     const existing = await prisma.attendance.findFirst({
       where: { id: p.id, ...(scopedTenantId ? { tenantId: scopedTenantId } : {}) },
-      select: {
-        id: true,
-        checkInFaceImage: true,
-        checkOutFaceImage: true,
-      },
+      include: { user: { select: { name: true } } },
     });
     if (!existing) return NextResponse.json({ message: "Attendance not found" }, { status: 404 });
 
@@ -138,6 +150,21 @@ export async function DELETE(_: Request, { params }: Params) {
       });
       if (!linked) await deleteFromMinio(url);
     }));
+
+    const { user: attendanceUser, ...deletedAttendance } = existing;
+    await writeAuditLog({
+      action: "attendances.delete",
+      status: "success",
+      request: req,
+      actorUserId: auth.user.id,
+      actorName: auth.user.name,
+      actorRole: auth.user.roleName,
+      tenantId: existing.tenantId,
+      targetType: "attendance",
+      targetId: existing.id,
+      message: `Menghapus kehadiran ${attendanceUser.name} tanggal ${existing.attendanceDay.toISOString().slice(0, 10)} (status ${existing.status})`,
+      metadata: { before: pickActivityLogFields(deletedAttendance) },
+    });
 
     return NextResponse.json({
       message: "Attendance successfully deleted",

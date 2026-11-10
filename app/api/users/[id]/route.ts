@@ -12,6 +12,7 @@ import { writeAuditLog } from "@/lib/security/audit-log";
 import { validateUserAssignment } from "@/lib/helper/user-assignment-validation";
 import { parseFaceDescriptor } from "@/lib/helper/face-descriptor";
 import { JOIN_DATE_ERROR_MESSAGE, parseJoinDate } from "@/lib/helper/join-date";
+import { diffActivityLogFields, pickActivityLogFields } from "@/lib/helper/activity-log-diff";
 
 // Helper: hapus file avatar lama dari MinIO
 async function deleteOldAvatar(avatarUrl: string | null) {
@@ -66,7 +67,6 @@ export async function PUT(req: Request, { params }: Params) {
     const { id } = await params;
     const targetUser = await prisma.user.findFirst({
       where: { id, ...(scopedTenantId ? { tenantId: scopedTenantId } : {}) },
-      select: { id: true, tenantId: true, roleId: true, departmentId: true, branchId: true },
     });
     if (!targetUser) return NextResponse.json({ message: "User not found" }, { status: 404 });
 
@@ -185,6 +185,22 @@ export async function PUT(req: Request, { params }: Params) {
       data: updateData,
     });
 
+    const changes = diffActivityLogFields(targetUser, user);
+    if (body.password) changes.password = { from: "***", to: "***" };
+    await writeAuditLog({
+      action: "users.update",
+      status: "success",
+      request: req,
+      actorUserId: auth.user.id,
+      actorName: auth.user.name,
+      actorRole: auth.user.roleName,
+      tenantId: targetUser.tenantId,
+      targetType: "user",
+      targetId: id,
+      message: `Mengubah data karyawan ${user.name}`,
+      metadata: { changes },
+    });
+
     return NextResponse.json({
       message: "User successfully updated",
       data: user,
@@ -209,7 +225,6 @@ export async function DELETE(_: Request, { params }: Params) {
     // Ambil avatarUrl sebelum hapus user, untuk cleanup MinIO
     const user = await prisma.user.findFirst({
       where: { id, ...(scopedTenantId ? { tenantId: scopedTenantId } : {}) },
-      select: { avatarUrl: true },
     });
     if (!user) return NextResponse.json({ message: "User not found" }, { status: 404 });
 
@@ -222,15 +237,17 @@ export async function DELETE(_: Request, { params }: Params) {
       await deleteOldAvatar(user.avatarUrl);
     }
 
-    writeAuditLog({
+    await writeAuditLog({
       action: "users.delete",
       status: "success",
       actorUserId: auth.user.id,
+      actorName: auth.user.name,
       actorRole: auth.user.roleName,
-      tenantId: auth.user.tenantId,
+      tenantId: user.tenantId,
       targetType: "user",
       targetId: id,
-      message: "User deleted",
+      message: `Menghapus karyawan ${user.name}`,
+      metadata: { before: pickActivityLogFields(user) },
     });
 
     return NextResponse.json({

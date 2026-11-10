@@ -910,3 +910,26 @@ model TaskAttachment {
   @@index([taskId])
   @@map("task_attachments")
 }
+
+model ActivityLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  action      String
+  status      String
+  actorUserId String?  @map("actor_user_id")
+  actorName   String?  @map("actor_name")
+  actorRole   String?  @map("actor_role")
+  tenantId    String?  @map("tenant_id")
+  targetType  String?  @map("target_type")
+  targetId    String?  @map("target_id")
+  ipAddress   String?  @map("ip_address")
+  method      String?
+  path        String?
+  message     String?
+  metadata    Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId, createdAt])
+  @@index([action])
+  @@index([createdAt])
+  @@map("activity_logs")
+}

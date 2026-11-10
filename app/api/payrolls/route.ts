@@ -10,6 +10,7 @@ import { AUTO_ABSENT_DEDUCTION_COMPONENT_NAME, AUTO_LATE_DEDUCTION_COMPONENT_NAM
 import { getApprovedOvertimePayoutSummary } from "@/lib/helper/payroll-overtime";
 import { getPayrollSalarySummary } from "@/lib/helper/payroll-salary";
 import { lockPayrollJournal, syncPayrollJournal } from "@/lib/helper/payroll-journal";
+import { writeAuditLog } from "@/lib/security/audit-log";
 
 function buildPayrollReferenceNumber(id: string, createdAt: Date) {
   return `PYR-${createdAt.getFullYear()}-${id.slice(0, 8).toUpperCase()}`;
@@ -222,6 +223,20 @@ export async function POST(req: NextRequest) {
           failures.push(employee.name);
         }
       }
+      await writeAuditLog({
+        action: "payrolls.bulk_create",
+        status: "success",
+        request: req,
+        actorUserId: auth.user.id,
+        actorName: auth.user.name,
+        actorRole: auth.user.roleName,
+        tenantId: scopedTenantId,
+        targetType: "payroll",
+        targetId: null,
+        message: `Generate payroll massal periode ${normalizedMonth}/${normalizedYear}: ${created} dibuat, ${skipped} dilewati, ${failures.length} gagal`,
+        metadata: { month: normalizedMonth, year: normalizedYear, startDate, endDate, branchId: selectedBranchId ?? null, created, skipped, failures },
+      });
+
       return NextResponse.json({
         message: `${created} payroll berhasil dibuat${skipped ? `, ${skipped} dilewati karena sudah ada` : ""}${failures.length ? `, ${failures.length} gagal` : ""}.`,
         data: { created, skipped, failed: failures.length, failures },
@@ -345,6 +360,20 @@ export async function POST(req: NextRequest) {
       }
       await syncPayrollJournal(tx, updated, auth.user.id);
       return updated;
+    });
+
+    await writeAuditLog({
+      action: "payrolls.create",
+      status: "success",
+      request: req,
+      actorUserId: auth.user.id,
+      actorName: auth.user.name,
+      actorRole: auth.user.roleName,
+      tenantId: finalTenantId,
+      targetType: "payroll",
+      targetId: payrollWithReference.id,
+      message: `Membuat payroll ${payrollWithReference.referenceNumber ?? payrollWithReference.id} periode ${normalizedMonth}/${normalizedYear}`,
+      metadata: { after: { userId, month: normalizedMonth, year: normalizedYear, startDate, endDate, basicSalary: normalizedBasicSalary, allowances, deductions, totalSalary, status, componentValues: normalizedComponentValues } },
     });
 
     return NextResponse.json(

@@ -10,6 +10,7 @@ import { requirePermission } from "@/lib/auth/permission";
 import { validateUserAssignment } from "@/lib/helper/user-assignment-validation";
 import { parseFaceDescriptor } from "@/lib/helper/face-descriptor";
 import { JOIN_DATE_ERROR_MESSAGE, parseJoinDate } from "@/lib/helper/join-date";
+import { writeAuditLog } from "@/lib/security/audit-log";
 
 export async function GET(req: NextRequest) {
   try {
@@ -250,6 +251,20 @@ export async function POST(req: NextRequest) {
         status: true,
         createdAt: true,
       },
+    });
+
+    await writeAuditLog({
+      action: "users.create",
+      status: "success",
+      request: req,
+      actorUserId: auth.user.id,
+      actorName: auth.user.name,
+      actorRole: auth.user.roleName,
+      tenantId: finalTenantId,
+      targetType: "user",
+      targetId: user.id,
+      message: `Membuat karyawan ${user.name}`,
+      metadata: { after: { email, name, roleId, departmentId, branchId, position, joinDate: parsedJoinDate, salary, salaryType } },
     });
 
     return NextResponse.json(
