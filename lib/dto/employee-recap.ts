@@ -13,6 +13,9 @@ export type SubmissionRecapHistoryDto = {
   type: string;
   startDate: string;
   endDate: string;
+  /** Hari ketidakhadiran sesuai jadwal kerja cabang (tanpa hari libur / di luar jadwal). */
+  workDays: number;
+  calendarDays: number;
   reason: string;
   status: string;
   createdAt: string;

@@ -425,6 +425,7 @@ export default function RecapModal({
                           <TableHead className="p-3 font-semibold dark:text-gray-300">Jenis</TableHead>
                           <TableHead className="p-3 font-semibold dark:text-gray-300">Tanggal Mulai</TableHead>
                           <TableHead className="p-3 font-semibold dark:text-gray-300">Tanggal Selesai</TableHead>
+                          <TableHead className="p-3 font-semibold dark:text-gray-300">Total Hari</TableHead>
                           <TableHead className="p-3 font-semibold dark:text-gray-300">Alasan</TableHead>
                           <TableHead className="p-3 font-semibold dark:text-gray-300">Status</TableHead>
                           <TableHead className="p-3 font-semibold dark:text-gray-300">Diajukan</TableHead>
@@ -437,6 +438,12 @@ export default function RecapModal({
                               <TableCell className="p-3 font-medium dark:text-gray-300">{sub.type}</TableCell>
                               <TableCell className="p-3 whitespace-nowrap dark:text-gray-300">{formatDate(sub.startDate)}</TableCell>
                               <TableCell className="p-3 whitespace-nowrap dark:text-gray-300">{formatDate(sub.endDate)}</TableCell>
+                              <TableCell className="p-3 whitespace-nowrap dark:text-gray-300">
+                                <span className="font-semibold">{sub.workDays} hari</span>
+                                {sub.calendarDays !== sub.workDays && (
+                                  <span className="block text-xs text-gray-500 dark:text-gray-400">dari {sub.calendarDays} hari</span>
+                                )}
+                              </TableCell>
                               <TableCell className="p-3 max-w-[220px] truncate dark:text-gray-300">{sub.reason || "-"}</TableCell>
                               <TableCell className="p-3">
                                 <span className={`px-2 py-1 rounded-full text-xs font-medium ${getSubmissionStatusBadge(sub.status)}`}>
@@ -448,7 +455,7 @@ export default function RecapModal({
                           ))
                         ) : (
                           <TableRow>
-                            <TableCell colSpan={6} className="p-8 text-center text-gray-500 dark:text-gray-400">
+                            <TableCell colSpan={7} className="p-8 text-center text-gray-500 dark:text-gray-400">
                               Tidak ada pengajuan untuk tahun ini
                             </TableCell>
                           </TableRow>

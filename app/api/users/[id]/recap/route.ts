@@ -131,26 +131,6 @@ export async function GET(req: Request, { params }: Params) {
       include: { submissionType: true },
     });
 
-    // Hitung hanya hari kerja sesuai jadwal cabang user (tanpa akhir pekan / libur nasional).
-    const countLeaveDays = await createLeaveDayCounter(prisma, id, {
-      startDate: new Date(Date.UTC(recapYear, 0, 1)),
-      endDate: new Date(Date.UTC(recapYear, 11, 31)),
-    });
-
-    const leaveQuotas = leaveConfigs.map((config) => {
-      const typeIds = config.submissionTypes.map((t) => t.id);
-      const usedDays = yearSubmissions
-        .filter((s) => typeIds.includes(s.submissionTypeId))
-        .reduce((total, s) => total + countLeaveDays(s), 0);
-
-      return {
-        configName: config.name,
-        maxDays: config.maxDays,
-        usedDays,
-        remainingDays: Math.max(0, config.maxDays - usedDays),
-      };
-    });
-
     // 5. Riwayat pengajuan tahun ini
     const submissionsHistory = await prisma.submission.findMany({
       where: {
@@ -162,11 +142,40 @@ export async function GET(req: Request, { params }: Params) {
       orderBy: { createdAt: "desc" },
     });
 
+    // Hitung hanya hari kerja sesuai jadwal cabang user (tanpa akhir pekan / libur nasional).
+    const quotaYearStart = new Date(Date.UTC(recapYear, 0, 1));
+    const quotaYearEnd = new Date(Date.UTC(recapYear, 11, 31));
+    const countLeaveDays = await createLeaveDayCounter(prisma, id, {
+      startDate: new Date(Math.min(quotaYearStart.getTime(), ...submissionsHistory.map((s) => s.startDate.getTime()))),
+      endDate: new Date(Math.max(quotaYearEnd.getTime(), ...submissionsHistory.map((s) => s.endDate.getTime()))),
+    });
+    const countQuotaYearDays = (s: { startDate: Date; endDate: Date }) =>
+      countLeaveDays({
+        startDate: new Date(Math.max(s.startDate.getTime(), quotaYearStart.getTime())),
+        endDate: new Date(Math.min(s.endDate.getTime(), quotaYearEnd.getTime())),
+      });
+
+    const leaveQuotas = leaveConfigs.map((config) => {
+      const typeIds = config.submissionTypes.map((t) => t.id);
+      const usedDays = yearSubmissions
+        .filter((s) => typeIds.includes(s.submissionTypeId))
+        .reduce((total, s) => total + countQuotaYearDays(s), 0);
+
+      return {
+        configName: config.name,
+        maxDays: config.maxDays,
+        usedDays,
+        remainingDays: Math.max(0, config.maxDays - usedDays),
+      };
+    });
+
     const history = submissionsHistory.map((s) => ({
       id: s.id,
       type: s.submissionType.name,
       startDate: s.startDate.toISOString(),
       endDate: s.endDate.toISOString(),
+      workDays: countLeaveDays(s),
+      calendarDays: Math.round((s.endDate.getTime() - s.startDate.getTime()) / (24 * 60 * 60 * 1000)) + 1,
       reason: s.reason,
       status: s.status,
       createdAt: s.createdAt.toISOString(),
