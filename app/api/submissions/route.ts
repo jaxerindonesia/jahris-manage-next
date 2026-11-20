@@ -7,6 +7,7 @@ import { ensureTenantScope, requireSessionUser } from "@/lib/auth/tenant";
 import { hasPermission, requirePermission } from "@/lib/auth/permission";
 import { buildTenantStorageObjectName } from "@/lib/helper/storage";
 import { syncSubmissionAttendanceForRange } from "@/lib/helper/submission-attendance";
+import { createLeaveDayCounter } from "@/lib/helper/leave-days";
 import { uploadBufferToMinio, BUCKET_AVATARS } from "@/lib/minio";
 import { validateAttachmentBuffer } from "@/lib/security/file-validation";
 
@@ -137,21 +138,34 @@ export async function POST(req: NextRequest) {
 
     if (submissionType?.leaveConfig) {
       const config = submissionType.leaveConfig;
-      const requestedDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
       const linkedTypeIds = config.submissionTypes.map((t: { id: string }) => t.id);
-      const yearStart = new Date(start.getFullYear(), 0, 1);
-      const yearEnd = new Date(start.getFullYear(), 11, 31, 23, 59, 59);
+      const quotaYear = start.getUTCFullYear();
+      const yearStart = new Date(Date.UTC(quotaYear, 0, 1));
+      const yearEnd = new Date(Date.UTC(quotaYear, 11, 31, 23, 59, 59, 999));
+      // Hari cuti dihitung sesuai jadwal kerja cabang user (tanpa akhir pekan / libur nasional).
+      const countLeaveDays = await createLeaveDayCounter(prisma, targetUserId, {
+        startDate: yearStart,
+        endDate: new Date(Date.UTC(quotaYear, 11, 31)),
+      });
+      const requestedDays = countLeaveDays({ startDate: start, endDate: end });
+      if (requestedDays === 0) {
+        return NextResponse.json(
+          { message: "Rentang tanggal yang diajukan tidak mencakup hari kerja sesuai jadwal cabang." },
+          { status: 422 },
+        );
+      }
       const approvedSubmissions = await prisma.submission.findMany({
         where: {
           ...(finalTenantId ? { tenantId: finalTenantId } : {}),
           userId: targetUserId,
           submissionTypeId: { in: linkedTypeIds },
           status: "APPROVED",
-          startDate: { gte: yearStart, lte: yearEnd },
+          startDate: { lte: yearEnd },
+          endDate: { gte: yearStart },
         },
         select: { startDate: true, endDate: true },
       });
-      const usedDays = approvedSubmissions.reduce((total: number, sub: { startDate: Date; endDate: Date }) => total + (Math.ceil((new Date(sub.endDate).getTime() - new Date(sub.startDate).getTime()) / (1000 * 60 * 60 * 24)) + 1), 0);
+      const usedDays = approvedSubmissions.reduce((total, sub) => total + countLeaveDays(sub), 0);
       const remainingDays = config.maxDays - usedDays;
       if (requestedDays > remainingDays) {
         return NextResponse.json({ message: remainingDays <= 0 ? `Kuota cuti "${config.name}" sudah habis. Sisa: 0 hari dari ${config.maxDays} hari.` : `Permintaan melebihi batas cuti "${config.name}". Sisa kuota: ${remainingDays} hari, Anda mengajukan ${requestedDays} hari.` }, { status: 422 });
