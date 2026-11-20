@@ -10,6 +10,7 @@ import {
   normalizeAttendanceStatus,
   isWorkedAttendanceStatus,
 } from "@/lib/helper/attendance-status";
+import { createLeaveDayCounter } from "@/lib/helper/leave-days";
 
 type Params = {
   params: Promise<{
@@ -119,27 +120,28 @@ export async function GET(req: Request, { params }: Params) {
     const yearStart = new Date(recapYear, 0, 1);
     const yearEnd = new Date(recapYear, 11, 31, 23, 59, 59, 999);
 
+    // Termasuk pengajuan yang melewati pergantian tahun; hanya hari di tahun ini yang dihitung.
     const yearSubmissions = await prisma.submission.findMany({
       where: {
         userId: id,
         status: "APPROVED",
-        startDate: { gte: yearStart },
-        endDate: { lte: yearEnd },
+        startDate: { lte: yearEnd },
+        endDate: { gte: yearStart },
       },
       include: { submissionType: true },
+    });
+
+    // Hitung hanya hari kerja sesuai jadwal cabang user (tanpa akhir pekan / libur nasional).
+    const countLeaveDays = await createLeaveDayCounter(prisma, id, {
+      startDate: new Date(Date.UTC(recapYear, 0, 1)),
+      endDate: new Date(Date.UTC(recapYear, 11, 31)),
     });
 
     const leaveQuotas = leaveConfigs.map((config) => {
       const typeIds = config.submissionTypes.map((t) => t.id);
       const usedDays = yearSubmissions
         .filter((s) => typeIds.includes(s.submissionTypeId))
-        .reduce((total, s) => {
-          const start = new Date(s.startDate);
-          const end = new Date(s.endDate);
-          const diffTime = Math.abs(end.getTime() - start.getTime());
-          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-          return total + diffDays;
-        }, 0);
+        .reduce((total, s) => total + countLeaveDays(s), 0);
 
       return {
         configName: config.name,
