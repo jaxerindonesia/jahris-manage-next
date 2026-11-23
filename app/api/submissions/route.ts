@@ -142,7 +142,6 @@ export async function POST(req: NextRequest) {
       const quotaYear = start.getUTCFullYear();
       const yearStart = new Date(Date.UTC(quotaYear, 0, 1));
       const yearEnd = new Date(Date.UTC(quotaYear, 11, 31, 23, 59, 59, 999));
-      // Hari cuti dihitung sesuai jadwal kerja cabang user (tanpa akhir pekan / libur nasional).
       const countLeaveDays = await createLeaveDayCounter(prisma, targetUserId, {
         startDate: yearStart,
         endDate: new Date(Date.UTC(quotaYear, 11, 31)),
