@@ -13,6 +13,8 @@ export type SubmissionRecapHistoryDto = {
   type: string;
   startDate: string;
   endDate: string;
+  workDays: number;
+  calendarDays: number;
   reason: string;
   status: string;
   createdAt: string;

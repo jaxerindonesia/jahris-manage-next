@@ -16,7 +16,7 @@ export async function getPayrollAttendanceSummary(params: {
     where: { tenantId }, select: { id: true, name: true }, orderBy: { name: "asc" },
   });
   const submissionDays = submissionTypes.map((type) => ({ name: type.name, days: 0, calendarDays: 0 }));
-  const empty = { absentDays: [] as Date[], submissionDays };
+  const empty = { absentDays: [] as Date[], submissionDays, scheduledWorkDateKeys: null as Set<string> | null };
   if (range.gte >= range.lt) return empty;
   const schedules = await getScheduledWorkDays(prisma, userId, range);
   const completedDays = schedules.filter((day) => day.endAt <= now);
@@ -36,6 +36,9 @@ export async function getPayrollAttendanceSummary(params: {
   ]);
 
   const holidayDates = new Set(holidays.map((holiday) => holiday.date));
+  const scheduledWorkDateKeys = schedules.length
+    ? new Set(schedules.map(({ workDate }) => workDate.toISOString().slice(0, 10)).filter((key) => !holidayDates.has(key)))
+    : null;
   const excusedStatuses = new Set(submissionTypes.map((type) => normalizeAttendanceStatus(type.name)));
   const attendanceByDate = new Map(attendances.map((attendance) => [attendance.attendanceDay.toISOString().slice(0, 10), attendance]));
   const approvedRanges = submissions.map((submission) => ({
@@ -70,9 +73,9 @@ export async function getPayrollAttendanceSummary(params: {
     if (attendance && excusedStatuses.has(normalizeAttendanceStatus(attendance.status))) return [];
     return [workDate];
   });
-  return { absentDays, submissionDays };
+  return { absentDays, submissionDays, scheduledWorkDateKeys };
 }
 
-export async function getPayrollAbsentDays(params: Parameters<typeof getPayrollAttendanceSummary>[0]) {
-  return (await getPayrollAttendanceSummary(params)).absentDays;
+export function isOnScheduledWorkDay(attendanceDay: Date, scheduledWorkDateKeys: Set<string> | null) {
+  return !scheduledWorkDateKeys || scheduledWorkDateKeys.has(attendanceDay.toISOString().slice(0, 10));
 }

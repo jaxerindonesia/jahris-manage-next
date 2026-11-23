@@ -7,7 +7,7 @@ import type { PayrollSalarySummaryDto } from "@/lib/dto/payroll-calculation";
 import { getPayrollPeriodRange, type PayrollPeriod } from "@/lib/helper/payroll-period";
 import { WORK_DAY_CODES } from "@/lib/helper/work-schedule";
 import { getJakartaDayKey } from "@/lib/helper/date";
-import { getPayrollAbsentDays } from "@/lib/helper/payroll-attendance";
+import { getPayrollAttendanceSummary, isOnScheduledWorkDay } from "@/lib/helper/payroll-attendance";
 
 export async function getPayrollSalarySummary(params: PayrollPeriod & {
   tenantId?: string | null;
@@ -53,10 +53,14 @@ export async function getPayrollSalarySummary(params: PayrollPeriod & {
     },
     select: { status: true, attendanceDay: true },
   }) : [];
-  const paidAttendanceDays = attendances.filter((attendance) =>
+  const { absentDays, scheduledWorkDateKeys } = await getPayrollAttendanceSummary({ userId, tenantId: user.tenantId, range: attendanceRange, attendances, now });
+  const scheduledAttendances = attendances.filter((attendance) =>
+    isOnScheduledWorkDay(attendance.attendanceDay, scheduledWorkDateKeys),
+  );
+  const paidAttendanceDays = scheduledAttendances.filter((attendance) =>
     isWorkedAttendanceStatus(attendance.status),
   ).length;
-  const lateAttendanceDays = attendances.filter((attendance) =>
+  const lateAttendanceDays = scheduledAttendances.filter((attendance) =>
     isLateAttendanceStatus(attendance.status),
   ).length;
   const attendanceConfig = await prisma.attendanceConfig.findFirst({
@@ -72,7 +76,6 @@ export async function getPayrollSalarySummary(params: PayrollPeriod & {
       `
     : [];
   const rateByDay = new Map(absentRates.map((rate) => [rate.day_of_week, rate.amount]));
-  const absentDays = await getPayrollAbsentDays({ userId, tenantId: user.tenantId, range: attendanceRange, attendances, now });
   const absentDeductionAmount = salaryType === "daily" ? 0 : absentDays.reduce((total, day) =>
     total + (rateByDay.get(WORK_DAY_CODES[day.getUTCDay()]) ?? 0), 0);
 
