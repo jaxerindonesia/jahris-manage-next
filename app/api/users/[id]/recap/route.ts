@@ -50,7 +50,6 @@ export async function GET(req: Request, { params }: Params) {
       return NextResponse.json({ message: "Periode rekap tidak valid" }, { status: 400 });
     }
 
-    // 1. Ambil info user
     const user = await prisma.user.findFirst({
       where: { id, ...(scopedTenantId ? { tenantId: scopedTenantId } : {}) },
       select: { id: true, name: true },
@@ -60,7 +59,6 @@ export async function GET(req: Request, { params }: Params) {
       return NextResponse.json({ message: "User not found" }, { status: 404 });
     }
 
-    // 2. Ambil data kehadiran untuk bulan & tahun tersebut
     const startDate = rangeStart ?? new Date(year, month - 1, 1);
     const endDate = rangeEnd
       ? new Date(rangeEnd.getTime() + 24 * 60 * 60 * 1000 - 1)
@@ -87,7 +85,6 @@ export async function GET(req: Request, { params }: Params) {
       ),
     );
 
-    // 3. Hitung summary kehadiran
     const summary = {
       totalHadir: 0,
       totalTelat: 0,
@@ -106,7 +103,6 @@ export async function GET(req: Request, { params }: Params) {
       }
     });
 
-    // 4. Ambil kuota cuti (LeaveConfig)
     const leaveConfigs = await prisma.leaveConfig.findMany({
       where: { ...(scopedTenantId ? { tenantId: scopedTenantId } : {}) },
       include: {
@@ -116,11 +112,9 @@ export async function GET(req: Request, { params }: Params) {
       },
     });
 
-    // Ambil semua pengajuan tahun ini untuk menghitung sisa kuota
     const yearStart = new Date(recapYear, 0, 1);
     const yearEnd = new Date(recapYear, 11, 31, 23, 59, 59, 999);
 
-    // Termasuk pengajuan yang melewati pergantian tahun; hanya hari di tahun ini yang dihitung.
     const yearSubmissions = await prisma.submission.findMany({
       where: {
         userId: id,
@@ -131,7 +125,6 @@ export async function GET(req: Request, { params }: Params) {
       include: { submissionType: true },
     });
 
-    // 5. Riwayat pengajuan tahun ini
     const submissionsHistory = await prisma.submission.findMany({
       where: {
         userId: id,
@@ -142,7 +135,6 @@ export async function GET(req: Request, { params }: Params) {
       orderBy: { createdAt: "desc" },
     });
 
-    // Hitung hanya hari kerja sesuai jadwal cabang user (tanpa akhir pekan / libur nasional).
     const quotaYearStart = new Date(Date.UTC(recapYear, 0, 1));
     const quotaYearEnd = new Date(Date.UTC(recapYear, 11, 31));
     const countLeaveDays = await createLeaveDayCounter(prisma, id, {

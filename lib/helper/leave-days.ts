@@ -11,14 +11,6 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 const toDayKey = (date: Date) => getJakartaDayKey(date).toISOString().slice(0, 10);
 
-/**
- * Builds a counter for leave days of one user, following the user's branch:
- * - REGULAR branch: only days marked as work days in BranchWorkingSchedule.
- * - SHIFT branch: every day except days explicitly marked as day off
- *   (future shift schedules may not exist yet when leave is requested).
- * National holidays are always excluded. Without a branch/schedule, all
- * calendar days except national holidays are counted.
- */
 export async function createLeaveDayCounter(
   prisma: LeaveDaysPrisma,
   userId: string,
