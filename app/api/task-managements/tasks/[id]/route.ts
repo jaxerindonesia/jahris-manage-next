@@ -7,6 +7,11 @@ import { canManageTaskDepartment } from "@/lib/auth/task-management";
 import { deleteFromMinio, BUCKET_AVATARS } from "@/lib/minio";
 import { requirePermission } from "@/lib/auth/permission";
 import { writeAuditLog } from "@/lib/security/audit-log";
+import {
+  generateTaskTicketNumber,
+  isDoneListName,
+  readTaskTicketFields,
+} from "@/lib/helper/task-ticket";
 
 type Params = {
   params: {
@@ -46,11 +51,6 @@ function canUseAnyDepartment(roleName: string) {
   return normalized === "superadmin" || normalized === "admin";
 }
 
-function isDoneListName(name: string) {
-  const normalized = name.toLowerCase();
-  return ["done", "completed", "selesai"].some((keyword) => normalized.includes(keyword));
-}
-
 async function canMoveTaskToDone(taskDepartmentId: string, userId: string, roleName: string) {
   if (canUseAnyDepartment(roleName)) return true;
 
@@ -83,6 +83,7 @@ async function findScopedTask(id: string, tenantId: string | null) {
     },
     include: {
       list: { select: { id: true, board: { select: { id: true, departmentId: true, tenantId: true } } } },
+      department: { select: { id: true, name: true, code: true } },
       categories: {
         include: { category: true },
       },
@@ -196,7 +197,8 @@ export async function PUT(req: Request, { params }: Params) {
       }
     }
 
-    const updateData: {
+    const updateData: ReturnType<typeof readTaskTicketFields> & {
+      ticketNumber?: string;
       title?: string;
       description?: string | null;
       startDate?: Date;
@@ -228,6 +230,10 @@ export async function PUT(req: Request, { params }: Params) {
     }
     if (body.listId !== undefined) {
       updateData.listId = nextListId;
+    }
+    Object.assign(updateData, readTaskTicketFields(body));
+    if (!existing.ticketNumber) {
+      updateData.ticketNumber = await generateTaskTicketNumber(prisma, existing.department, existing.createdAt);
     }
 
     const effectiveStartDate =

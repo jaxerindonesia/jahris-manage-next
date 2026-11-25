@@ -6,6 +6,7 @@ import type { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { ensureTenantScope, requireSessionUser } from "@/lib/auth/tenant";
 import { requirePermission } from "@/lib/auth/permission";
+import { normalizeDepartmentCode } from "@/lib/helper/task-ticket";
 import { writeAuditLog } from "@/lib/security/audit-log";
 
 type Params = {
@@ -102,6 +103,9 @@ export async function PUT(req: Request, { params }: Params) {
       );
     }
     if (rawName) updateData.name = rawName;
+    if (Object.prototype.hasOwnProperty.call(body, "code")) {
+      updateData.code = normalizeDepartmentCode(body.code);
+    }
 
     const department = await prisma.department.update({
       where: { id: p.id },

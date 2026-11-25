@@ -17,8 +17,10 @@ async function ensureDepartment(departmentId: string, tenantId: string | null) {
     select: {
       id: true,
       name: true,
+      code: true,
       tenantId: true,
       branchId: true,
+      tenant: { select: { companyName: true } },
       branch: { select: { id: true, name: true, code: true } },
       users: {
         where: { deletedAt: null, status: "active" },
@@ -68,25 +70,12 @@ async function ensureDefaultLists(boardId: string) {
     return;
   }
 
-  const names = new Set(lists.map((list) => list.name.toLowerCase()));
+  const hasOnProgress = lists.some((list) => list.name.toLowerCase() === "on progress");
   const oldOnProcess = lists.find((list) => list.name.toLowerCase() === "on process");
-  if (oldOnProcess && !names.has("on progress")) {
+  if (oldOnProcess && !hasOnProgress) {
     await prisma.taskList.update({
       where: { id: oldOnProcess.id },
       data: { name: "On Progress" },
-    });
-    names.delete("on process");
-    names.add("on progress");
-  }
-
-  const missingDefaults = DEFAULT_LISTS.filter((name) => !names.has(name.toLowerCase()));
-  if (missingDefaults.length > 0) {
-    await prisma.taskList.createMany({
-      data: missingDefaults.map((name, index) => ({
-        name,
-        position: lists.length + index,
-        boardId,
-      })),
     });
   }
 }
