@@ -1,6 +1,7 @@
 export interface DepartmentDto {
   id: string;
   name: string;
+  code?: string | null;
   tenantId?: string | null;
   branchId?: string | null;
   tenant?: { id: string; companyName: string } | null;
