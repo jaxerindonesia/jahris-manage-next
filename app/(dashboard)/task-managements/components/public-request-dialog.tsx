@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Copy, ExternalLink, Link2, Loader2, Mail, RefreshCw, Save } from "lucide-react";
+import { Copy, ExternalLink, Link2, ListChecks, Loader2, Mail, RefreshCw, Save } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -13,6 +13,7 @@ import {
   disablePublicRequestLink,
   fetchPublicRequestSettings,
   generatePublicRequestLink,
+  savePublicRequestTypes,
   saveTenantMailConfig,
   type TenantMailConfigForm,
 } from "../actions";
@@ -49,14 +50,18 @@ function toMailForm(settings: TaskPublicRequestSettingsDto): TenantMailConfigFor
   };
 }
 
+const toTypesText = (settings: TaskPublicRequestSettingsDto) =>
+  (settings.requestTypes.length > 0 ? settings.requestTypes : settings.defaultRequestTypes).join("\n");
+
 const errorMessage = (error: unknown, fallback: string) =>
   error instanceof Error ? error.message : fallback;
 
 export function PublicRequestDialog({ open, onOpenChange, departmentId, departmentName, onLinkGenerated }: Props) {
   const [settings, setSettings] = useState<TaskPublicRequestSettingsDto | null>(null);
   const [mailForm, setMailForm] = useState<TenantMailConfigForm>(EMPTY_MAIL_FORM);
+  const [typesText, setTypesText] = useState("");
   const [loading, setLoading] = useState(false);
-  const [busy, setBusy] = useState<"generate" | "disable" | "mail" | null>(null);
+  const [busy, setBusy] = useState<"generate" | "disable" | "mail" | "types" | null>(null);
 
   useEffect(() => {
     if (!open || !departmentId) return;
@@ -67,6 +72,7 @@ export function PublicRequestDialog({ open, onOpenChange, departmentId, departme
         if (!active) return;
         setSettings(data);
         setMailForm(toMailForm(data));
+        setTypesText(toTypesText(data));
       })
       .catch((error) => toast.error(errorMessage(error, "Gagal memuat pengaturan")))
       .finally(() => active && setLoading(false));
@@ -83,7 +89,31 @@ export function PublicRequestDialog({ open, onOpenChange, departmentId, departme
   const applySettings = (data: TaskPublicRequestSettingsDto) => {
     setSettings(data);
     setMailForm(toMailForm(data));
+    setTypesText(toTypesText(data));
   };
+
+  const saveTypes = async (requestTypes: string[], successMessage: string) => {
+    setBusy("types");
+    try {
+      applySettings(await savePublicRequestTypes(departmentId, requestTypes));
+      toast.success(successMessage);
+    } catch (error) {
+      toast.error(errorMessage(error, "Gagal menyimpan jenis request"));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleSaveTypes = () => {
+    const requestTypes = typesText.split("\n").map((line) => line.trim()).filter(Boolean);
+    if (requestTypes.length === 0) {
+      toast.error("Isi minimal satu jenis request");
+      return;
+    }
+    void saveTypes(requestTypes, "Jenis request disimpan");
+  };
+
+  const handleResetTypes = () => void saveTypes([], "Jenis request dikembalikan ke default");
 
   const handleGenerate = async () => {
     if (settings?.enabled && !window.confirm("Generate ulang akan membuat link lama tidak berlaku. Lanjutkan?")) return;
@@ -206,6 +236,47 @@ export function PublicRequestDialog({ open, onOpenChange, departmentId, departme
                     Nonaktifkan
                   </Button>
                 )}
+              </div>
+            </section>
+
+            <section className="space-y-3 border-t border-gray-200 pt-5 dark:border-gray-800">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-white">
+                  <ListChecks className="h-4 w-4" />
+                  Pilihan Jenis Request
+                  {settings && settings.requestTypes.length === 0 && (
+                    <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-400">
+                      Default
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  Satu pilihan per baris. Khusus department {departmentName}, tampil di dropdown &quot;Jenis request&quot;
+                  pada form publik.
+                </p>
+              </div>
+              <textarea
+                rows={7}
+                value={typesText}
+                onChange={(e) => setTypesText(e.target.value)}
+                placeholder={"Contoh:\nSurat Menyurat\nPengadaan ATK\nLainnya"}
+                className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              />
+              <div className="flex flex-wrap justify-end gap-2">
+                {settings && settings.requestTypes.length > 0 && (
+                  <Button type="button" variant="outline" onClick={handleResetTypes} disabled={busy !== null}>
+                    Kembalikan Default
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  onClick={handleSaveTypes}
+                  disabled={busy !== null}
+                  className="bg-blue-600 text-white hover:bg-blue-700"
+                >
+                  {busy === "types" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                  Simpan Jenis Request
+                </Button>
               </div>
             </section>
 

@@ -1,3 +1,4 @@
+import { normalizeAttachmentType } from "@/lib/helper/attachment";
 import { formatDateId } from "@/lib/helper/date";
 import {
   TASK_PRIORITIES,
@@ -21,6 +22,7 @@ type TaskTicketPrintData = {
     listId: string;
     members: { user: { name: string } }[];
     categories: { category: { id: string } }[];
+    attachments?: { name: string; url: string; type?: string | null }[];
   };
   department: { name: string; tenant?: { companyName: string } | null };
   lists: { id: string; name: string }[];
@@ -31,7 +33,7 @@ const TICKET_STYLES = `
 @page{size:A5;margin:0}
 *{box-sizing:border-box}
 body{margin:0;font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;color:#14181F;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-.card{width:148mm;height:210mm;padding:9mm 10mm;display:flex;flex-direction:column;gap:3mm;font-size:9pt;overflow:hidden;break-after:page}
+.card{width:148mm;height:210mm;padding:8mm 10mm;display:flex;flex-direction:column;gap:2mm;font-size:9pt;overflow:hidden;break-after:page}
 .card:last-child{break-after:auto}
 .hd{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #14181F;padding-bottom:2.5mm}
 .org{font-family:ui-monospace,Menlo,monospace;font-size:7.5pt;color:#0F766E;text-transform:uppercase}
@@ -44,17 +46,18 @@ body{margin:0;font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;co
 .sec i{flex:1;height:1px;background:#D5DBE3}
 .g2{display:grid;grid-template-columns:1fr 1fr;gap:2mm 5mm}
 .f{display:flex;flex-direction:column;gap:1mm;min-width:0}
-.ln{min-height:6.5mm;border-bottom:1px solid #9AA3B0;display:flex;align-items:flex-end;padding-bottom:.8mm;font-weight:600;font-size:9pt}
+.ln{min-height:5.5mm;border-bottom:1px solid #9AA3B0;display:flex;align-items:flex-end;padding-bottom:.8mm;font-weight:600;font-size:9pt}
 .cbs{display:flex;gap:2mm 3.5mm;flex-wrap:wrap}
 .cb{display:flex;align-items:center;gap:1.4mm;font-size:8.5pt}
 .cb i{width:3.2mm;height:3.2mm;border:1.2px solid #525B69;border-radius:1mm;flex-shrink:0}
 .cb.on{font-weight:700}.cb.on i{background:#14181F;border-color:#14181F}
-.jp{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:5mm}
+.jp{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5mm}
+.jp .pr .cbs{flex-wrap:nowrap}
 .ref{background:#F1F3F6;border-radius:1.5mm;padding:2mm 3mm;font-size:8pt;color:#525B69}
-.tl{display:grid;grid-template-columns:30mm 1fr 1fr 1fr;gap:1.2mm 3mm;align-items:end}
+.tl{display:grid;grid-template-columns:30mm 1fr 1fr;gap:1.2mm 3mm;align-items:end}
 .tl .n{font-size:8.5pt;font-weight:600;padding-bottom:.8mm}
-.sig{display:grid;grid-template-columns:repeat(3,1fr);gap:5mm;margin-top:auto}
-.sig div{display:flex;flex-direction:column;gap:14mm}
+.sig{display:grid;grid-template-columns:repeat(3,1fr);gap:5mm;margin-top:auto;padding-top:4mm}
+.sig div{display:flex;flex-direction:column;gap:12mm}
 .sig small{border-top:1px solid #14181F;padding-top:1mm;font-size:6.5pt;color:#525B69}
 .sig .lead{color:#B45309}
 .warn{background:#FDF3E1;border:1px solid #E8C98A;border-radius:1.5mm;padding:1.8mm 2.5mm;font-size:7pt;color:#7A4A06}
@@ -63,6 +66,10 @@ body{margin:0;font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;co
 .desc p{margin:0;white-space:pre-wrap}
 .desc .h{font-size:10.5pt;font-weight:700;margin-bottom:.6mm}
 .desc ul{margin:0;padding-left:5mm;display:flex;flex-direction:column;gap:1mm}
+.att{margin:0;padding-left:5mm;display:flex;flex-direction:column;gap:1.5mm;font-size:8.5pt}
+.att .tag{font-size:6.5pt;font-weight:700;color:#525B69;border:1px solid #C7CED8;border-radius:1mm;padding:0 1mm;margin-left:1mm}
+.att .url{display:block;font-family:ui-monospace,monospace;font-size:7pt;color:#525B69;word-break:break-all}
+.att .thumb{display:block;margin-top:1.5mm;max-width:100%;max-height:55mm;object-fit:contain;border:1px solid #D5DBE3;border-radius:1.5mm;break-inside:avoid}
 `;
 
 function escapeHtml(value?: string | null) {
@@ -91,17 +98,40 @@ function bulletBlock(title: string, value?: string | null) {
   return `<div><div class="h">${escapeHtml(title)}</div><ul>${lines.map((line) => `<li>${escapeHtml(line)}</li>`).join("")}</ul></div>`;
 }
 
+/** Foto ditampilkan sebagai preview; PDF/link cukup nama + URL. */
+function isPrintableImage(item: { url: string; type?: string | null }) {
+  if (!/^https?:\/\//i.test(item.url)) return false;
+  return item.type === "Foto" || normalizeAttachmentType(item.url) === "Foto";
+}
+
+function attachmentBlock(attachments: { name: string; url: string; type?: string | null }[] = []) {
+  const items = attachments.filter((item) => item.url || item.name);
+  if (items.length === 0) return "";
+  return `<div><div class="h">Attachment</div><ol class="att">${items
+    .map((item) => {
+      const type = item.type ? ` <span class="tag">${escapeHtml(item.type)}</span>` : "";
+      const preview = isPrintableImage(item)
+        ? `<img class="thumb" src="${escapeHtml(item.url)}" alt="${escapeHtml(item.name || "Foto")}">`
+        : "";
+      return `<li><b>${escapeHtml(item.name || "Lampiran")}</b>${type}<span class="url">${escapeHtml(item.url)}</span>${preview}</li>`;
+    })
+    .join("")}</ol></div>`;
+}
+
 function buildTimelineRows(data: TaskTicketPrintData) {
   const stages = data.lists.slice(1).filter((list) => !isRejectedListName(list.name));
-  const finalStage = stages.find((list) => isDoneListName(list.name)) ?? stages[stages.length - 1];
-  const rows = [{ label: "Mulai kerja", target: data.task.startDate }];
-  stages.forEach((list) => {
-    rows.push({ label: list.name, target: list.id === finalStage?.id ? data.task.dueDate : null });
-  });
-
-  return rows
-    .map((row) => `<span class="n">${escapeHtml(row.label)}</span><div class="ln">${row.target ? escapeHtml(formatDateId(row.target)) : ""}</div><div class="ln"></div><div class="ln"></div>`)
+  return stages
+    .map((list) => list.name)
+    .map((label) => `<span class="n">${escapeHtml(label)}</span><div class="ln"></div><div class="ln"></div>`)
     .join("");
+}
+
+/** Target mulai & target selesai (Done) ditampilkan berdampingan dalam satu baris. */
+function buildTimelineTargets(data: TaskTicketPrintData) {
+  const stages = data.lists.slice(1).filter((list) => !isRejectedListName(list.name));
+  const finalStage = stages.find((list) => isDoneListName(list.name)) ?? stages[stages.length - 1];
+  const date = (value?: Date | string | null) => (value ? formatDateId(value) : "");
+  return `<div class="g2">${field("Target Mulai Kerja", date(data.task.startDate))}${field(`Target ${finalStage?.name ?? "Selesai"}`, date(data.task.dueDate))}</div>`;
 }
 
 function buildTicketHtml(data: TaskTicketPrintData) {
@@ -128,15 +158,16 @@ function buildTicketHtml(data: TaskTicketPrintData) {
     </div>
     <div class="jp">
       <div class="f"><span class="lb">Jenis</span><div class="cbs">${data.categories.length > 0 ? data.categories.map((category) => checkbox(category.name, selectedCategoryIds.has(category.id))).join("") : "-"}</div></div>
-      <div class="f"><span class="lb">Prioritas</span><div class="cbs">${TASK_PRIORITIES.map((priority) => checkbox(priority.label, task.priority === priority.value)).join("")}</div></div>
+      <div class="f pr"><span class="lb">Prioritas</span><div class="cbs">${TASK_PRIORITIES.map((priority) => checkbox(priority.label, task.priority === priority.value)).join("")}</div></div>
     </div>
     <div class="ref">Deskripsi, tujuan &amp; ruang lingkup lengkap &rarr; <b>Lembar 2</b></div>
     ${section(2, "Penanggung Jawab")}
     <div class="g2">${field("PIC", pic)}${field("PIC Pendukung", task.supportPic)}</div>
     ${section(3, "Timeline")}
-    <div class="tl"><span></span><span class="lb">Target</span><span class="lb">Realisasi</span><span class="lb">Paraf</span>${buildTimelineRows(data)}</div>
+    ${buildTimelineTargets(data)}
+    <div class="tl"><span></span><span class="lb">Realisasi</span><span class="lb">Paraf</span>${buildTimelineRows(data)}</div>
     ${section(4, "Status")}
-    <div class="cbs">${data.lists.map((list) => checkbox(list.name, list.id === task.listId)).join("")}</div>
+    <div class="cbs">${data.lists.map((list) => checkbox(list.name, false)).join("")}</div>
     <div class="sig">
       <div><span class="lb">Pemohon</span><small>Nama &amp; tanda tangan</small></div>
       <div><span class="lb">PIC</span><small>Nama &amp; tanda tangan</small></div>
@@ -154,6 +185,7 @@ function buildTicketHtml(data: TaskTicketPrintData) {
       <div><div class="h">Deskripsi</div><p>${escapeHtml(task.description || "-")}</p></div>
       ${bulletBlock("Tujuan", task.objective)}
       ${bulletBlock("Ruang Lingkup", task.scope)}
+      ${attachmentBlock(task.attachments)}
     </div>
     ${footer(2)}
   </section>`;
@@ -179,8 +211,19 @@ export function printTaskTicket(data: TaskTicketPrintData) {
   frameDocument.close();
 
   frameWindow.onafterprint = () => frame.remove();
-  setTimeout(() => {
+
+  // Tunggu foto attachment selesai dimuat (maks 5 detik) supaya tidak tercetak kosong.
+  const imagesReady = Array.from(frameDocument.images).map(
+    (image) =>
+      new Promise<void>((resolve) => {
+        if (image.complete) return resolve();
+        image.addEventListener("load", () => resolve(), { once: true });
+        image.addEventListener("error", () => resolve(), { once: true });
+      }),
+  );
+  const timeout = new Promise<void>((resolve) => setTimeout(resolve, 5000));
+  void Promise.race([Promise.all(imagesReady), timeout]).then(() => {
     frameWindow.focus();
     frameWindow.print();
-  }, 100);
+  });
 }

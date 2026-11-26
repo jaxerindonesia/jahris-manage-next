@@ -59,3 +59,15 @@ export function saveTenantMailConfig(departmentId: string, form: TenantMailConfi
     "Gagal menyimpan pengaturan email",
   );
 }
+
+export function savePublicRequestTypes(departmentId: string, requestTypes: string[]) {
+  return requestSettings(
+    PUBLIC_REQUEST_ENDPOINT,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ departmentId, requestTypes }),
+    },
+    "Gagal menyimpan jenis request",
+  );
+}

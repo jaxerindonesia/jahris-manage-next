@@ -21,8 +21,8 @@ import {
   PUBLIC_REQUEST_OTHER_DIVISION,
   PUBLIC_REQUEST_PRIORITIES,
   PUBLIC_REQUEST_SOURCE,
-  PUBLIC_REQUEST_TYPES,
   ensureRequestQueueList,
+  resolveRequestTypes,
   resolvePublicRequestToken,
 } from "@/lib/helper/task-public-request";
 import { sendTaskRequestConfirmation } from "@/lib/helper/task-public-request-mail";
@@ -65,7 +65,7 @@ export async function GET(_req: NextRequest, { params }: RouteContext) {
       companyLogoUrl: department.tenant?.logoUrl || null,
       departmentName: department.name,
       divisions: await listDivisions(department.tenantId),
-      requestTypes: [...PUBLIC_REQUEST_TYPES],
+      requestTypes: resolveRequestTypes(department),
       priorities: PUBLIC_REQUEST_PRIORITIES.map((priority) => ({ ...priority })),
       maxFiles: PUBLIC_REQUEST_MAX_FILES,
     };
@@ -115,7 +115,7 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
     if (!divisions.includes(division)) {
       return NextResponse.json({ message: "Divisi tidak valid" }, { status: 400 });
     }
-    if (!(PUBLIC_REQUEST_TYPES as readonly string[]).includes(requestType)) {
+    if (!resolveRequestTypes(department).includes(requestType)) {
       return NextResponse.json({ message: "Jenis request tidak valid" }, { status: 400 });
     }
     if (!PUBLIC_REQUEST_PRIORITIES.some((item) => item.value === priority)) {

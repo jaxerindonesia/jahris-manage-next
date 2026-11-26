@@ -36,6 +36,7 @@ type AuditAction =
   | "tasks.update"
   | "tasks.delete"
   | "tasks.public_request_generate"
+  | "tasks.public_request_types_update"
   | "tasks.public_request_submit"
   | "tenant.mail_config_update"
   | "finance.import_customers"

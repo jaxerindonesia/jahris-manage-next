@@ -12,6 +12,9 @@ export interface TaskPublicRequestSettingsDto {
   departmentId: string;
   enabled: boolean;
   token: string | null;
+  /** Daftar custom; kosong berarti form memakai defaultRequestTypes. */
+  requestTypes: string[];
+  defaultRequestTypes: string[];
   mailConfig: TenantMailConfigDto | null;
 }
 

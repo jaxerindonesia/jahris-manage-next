@@ -8,11 +8,33 @@ import { requirePermission } from "@/lib/auth/permission";
 import { writeAuditLog } from "@/lib/security/audit-log";
 import { encryptSecret } from "@/lib/security/secret-box";
 import {
+  PUBLIC_REQUEST_MAX_TYPES,
+  PUBLIC_REQUEST_TYPE_MAX_LENGTH,
   buildPublicRequestToken,
+  defaultRequestTypes,
   ensureRequestQueueList,
   generatePublicRequestKey,
+  normalizeRequestTypes,
 } from "@/lib/helper/task-public-request";
 import type { TaskPublicRequestSettingsDto } from "@/lib/dto/task-public-request";
+
+const DEPARTMENT_SELECT = {
+  id: true,
+  name: true,
+  code: true,
+  tenantId: true,
+  publicRequestKey: true,
+  publicRequestTypes: true,
+} as const;
+
+type SettingsDepartment = {
+  id: string;
+  name: string;
+  code: string | null;
+  tenantId: string | null;
+  publicRequestKey: string | null;
+  publicRequestTypes: string[];
+};
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -32,7 +54,7 @@ async function authorize(departmentId: string, action: "get-all" | "update") {
   const scopedTenantId = ensureTenantScope(auth.user);
   const department = await prisma.department.findFirst({
     where: { id: departmentId, deletedAt: null, ...(scopedTenantId ? { tenantId: scopedTenantId } : {}) },
-    select: { id: true, tenantId: true, publicRequestKey: true },
+    select: DEPARTMENT_SELECT,
   });
   if (!department) {
     return { error: NextResponse.json({ message: "Department not found" }, { status: 404 }) };
@@ -40,11 +62,7 @@ async function authorize(departmentId: string, action: "get-all" | "update") {
   return { user: auth.user, department };
 }
 
-async function buildSettings(department: {
-  id: string;
-  tenantId: string | null;
-  publicRequestKey: string | null;
-}): Promise<TaskPublicRequestSettingsDto> {
+async function buildSettings(department: SettingsDepartment): Promise<TaskPublicRequestSettingsDto> {
   const mailConfig = department.tenantId
     ? await prisma.tenantMailConfig.findUnique({ where: { tenantId: department.tenantId } })
     : null;
@@ -55,6 +73,8 @@ async function buildSettings(department: {
     token: department.publicRequestKey
       ? buildPublicRequestToken(department.tenantId, department.id, department.publicRequestKey)
       : null,
+    requestTypes: department.publicRequestTypes,
+    defaultRequestTypes: defaultRequestTypes(department),
     mailConfig: mailConfig
       ? {
           host: mailConfig.host,
@@ -89,7 +109,7 @@ export async function POST(req: NextRequest) {
     const department = await prisma.department.update({
       where: { id: result.department.id },
       data: { publicRequestKey: generatePublicRequestKey(), publicRequestUserId: result.user.id },
-      select: { id: true, tenantId: true, publicRequestKey: true },
+      select: DEPARTMENT_SELECT,
     });
     await ensureRequestQueueList(department.id, department.tenantId);
 
@@ -122,7 +142,7 @@ export async function DELETE(req: NextRequest) {
     const department = await prisma.department.update({
       where: { id: result.department.id },
       data: { publicRequestKey: null },
-      select: { id: true, tenantId: true, publicRequestKey: true },
+      select: DEPARTMENT_SELECT,
     });
 
     return NextResponse.json({
@@ -132,6 +152,49 @@ export async function DELETE(req: NextRequest) {
   } catch (error) {
     console.error("DISABLE TASK PUBLIC REQUEST ERROR:", error);
     return NextResponse.json({ message: "Failed to disable public link" }, { status: 500 });
+  }
+}
+
+export async function PATCH(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const result = await authorize(String(body.departmentId || ""), "update");
+    if (result.error) return result.error;
+
+    const requestTypes = normalizeRequestTypes(body.requestTypes);
+    if (!requestTypes) {
+      return NextResponse.json(
+        {
+          message: `Jenis request maksimal ${PUBLIC_REQUEST_MAX_TYPES} item, masing-masing maksimal ${PUBLIC_REQUEST_TYPE_MAX_LENGTH} karakter`,
+        },
+        { status: 400 },
+      );
+    }
+
+    const department = await prisma.department.update({
+      where: { id: result.department.id },
+      data: { publicRequestTypes: requestTypes },
+      select: DEPARTMENT_SELECT,
+    });
+
+    writeAuditLog({
+      action: "tasks.public_request_types_update",
+      status: "success",
+      actorUserId: result.user.id,
+      actorRole: result.user.roleName,
+      tenantId: result.user.tenantId,
+      targetType: "department",
+      targetId: department.id,
+      message: "Public request types updated",
+    });
+
+    return NextResponse.json({
+      message: "Jenis request berhasil disimpan",
+      data: await buildSettings(department),
+    });
+  } catch (error) {
+    console.error("UPDATE TASK PUBLIC REQUEST TYPES ERROR:", error);
+    return NextResponse.json({ message: "Failed to save request types" }, { status: 500 });
   }
 }
 
