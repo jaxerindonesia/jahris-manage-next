@@ -30,6 +30,7 @@ export async function POST() {
     action: "auth.logout",
     status: "success",
     actorUserId: user?.id ?? null,
+    actorName: user?.name ?? null,
     actorRole: user?.roleName ?? null,
     tenantId: user?.tenantId ?? null,
     message: "Logout successful",

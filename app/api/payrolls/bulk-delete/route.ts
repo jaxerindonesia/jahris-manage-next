@@ -5,6 +5,7 @@ import prisma from "@/lib/prisma";
 import { ensureTenantScope, requireSessionUser } from "@/lib/auth/tenant";
 import { requirePermission } from "@/lib/auth/permission";
 import { lockPayrollJournal } from "@/lib/helper/payroll-journal";
+import { writeAuditLog } from "@/lib/security/audit-log";
 
 export async function DELETE(req: Request) {
   try {
@@ -28,7 +29,7 @@ export async function DELETE(req: Request) {
     const scopedTenantId = ensureTenantScope(auth.user);
     const payrolls = await prisma.payroll.findMany({
       where: { id: { in: ids }, ...(scopedTenantId ? { tenantId: scopedTenantId } : {}) },
-      select: { id: true, tenantId: true },
+      select: { id: true, tenantId: true, referenceNumber: true, userId: true, month: true, year: true, totalSalary: true, status: true },
     });
 
     if (!payrolls.length) {
@@ -45,6 +46,27 @@ export async function DELETE(req: Request) {
       });
       await tx.payroll.deleteMany({ where: { id: { in: accessibleIds } } });
     });
+
+    const payrollsByTenant = new Map<string | null, typeof payrolls>();
+    for (const payroll of payrolls) {
+      payrollsByTenant.set(payroll.tenantId, [...(payrollsByTenant.get(payroll.tenantId) ?? []), payroll]);
+    }
+    for (const [tenantId, tenantPayrolls] of payrollsByTenant) {
+      await writeAuditLog({
+        action: "payrolls.bulk_delete",
+        status: "success",
+        request: req,
+        actorUserId: auth.user.id,
+        actorName: auth.user.name,
+        actorRole: auth.user.roleName,
+        tenantId: tenantId,
+        targetType: "payroll",
+        targetId: null,
+        message: `Menghapus ${tenantPayrolls.length} payroll sekaligus`,
+        metadata: { before: tenantPayrolls },
+      });
+
+    }
 
     return NextResponse.json({
       message: `${payrolls.length} payroll berhasil dihapus`,

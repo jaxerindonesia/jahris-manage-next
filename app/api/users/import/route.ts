@@ -11,6 +11,7 @@ import { requirePermission } from "@/lib/auth/permission";
 import { writeAuditLog } from "@/lib/security/audit-log";
 import { consumeRateLimit } from "@/lib/security/rate-limit";
 import { getRequestIp } from "@/lib/security/request";
+import { JOIN_DATE_ERROR_MESSAGE, parseJoinDate } from "@/lib/helper/join-date";
 
 type ImportRequestRow = {
   rowNumber: number;
@@ -65,6 +66,7 @@ export async function POST(req: NextRequest) {
         status: "denied",
         request: req,
         actorUserId: auth.user.id,
+        actorName: auth.user.name,
         actorRole: auth.user.roleName,
         tenantId: auth.user.tenantId,
         message: "User import rate limit exceeded",
@@ -88,6 +90,7 @@ export async function POST(req: NextRequest) {
         status: "failed",
         request: req,
         actorUserId: auth.user.id,
+        actorName: auth.user.name,
         actorRole: auth.user.roleName,
         tenantId: auth.user.tenantId,
         message: "Import rows empty",
@@ -277,6 +280,12 @@ export async function POST(req: NextRequest) {
         departmentId = department.id;
       }
 
+      const joinDate = parseJoinDate(row.joinDate);
+      if (joinDate === undefined) {
+        errors.push({ row: rowNumber, column: "Tanggal Bergabung", message: JOIN_DATE_ERROR_MESSAGE });
+        continue;
+      }
+
       batchEmailSet.add(email);
       const salt = await bcrypt.genSalt(10);
       const hashedPassword = await bcrypt.hash(row.password, salt);
@@ -292,7 +301,7 @@ export async function POST(req: NextRequest) {
         nik: row.nik?.trim() || null,
         phone: row.phone?.trim() || null,
         position: row.position?.trim() || null,
-        joinDate: parseDate(row.joinDate),
+        joinDate,
         salary: typeof row.salary === "number" ? row.salary : null,
         salaryType: row.salaryType || "monthly",
         gender: mapGender(row.gender),
@@ -317,6 +326,7 @@ export async function POST(req: NextRequest) {
       status: errors.length > 0 ? "failed" : "success",
       request: req,
       actorUserId: auth.user.id,
+      actorName: auth.user.name,
       actorRole: auth.user.roleName,
       tenantId: auth.user.tenantId,
       message: "User import completed",

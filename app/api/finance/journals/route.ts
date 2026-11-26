@@ -154,6 +154,7 @@ export async function POST(req: NextRequest) {
     action: "finance.journals.create",
     status: "success",
     actorUserId: auth.user.id,
+    actorName: auth.user.name,
     actorRole: auth.user.roleName,
     tenantId: auth.user.tenantId,
     targetType: "journal",

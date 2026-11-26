@@ -169,6 +169,7 @@ export default function DesktopNavbar() {
       reimbursements: "Reimbursement",
       overtimes: "Lembur",
       tenants: "Tenant",
+      "activity-logs": "Log Aktivitas",
     };
 
     if (path === "finance") {

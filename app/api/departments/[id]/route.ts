@@ -153,6 +153,7 @@ export async function DELETE(_: Request, { params }: Params) {
       action: "departments.delete",
       status: "success",
       actorUserId: auth.user.id,
+      actorName: auth.user.name,
       actorRole: auth.user.roleName,
       tenantId: auth.user.tenantId,
       targetType: "department",

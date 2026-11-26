@@ -49,7 +49,8 @@ import {
   ListTodo,
   Clock,
   Split,
-  CalendarSync
+  CalendarSync,
+  History
 } from "lucide-react";
 import { usePermission } from "@/lib/helper/check-role";
 
@@ -66,6 +67,7 @@ type SidebarItem = {
   path: string;
   permissions?: string[];
   superadminOnly?: boolean;
+  allowSuperadmin?: boolean;
   subItems?: SidebarSubItem[];
   permissionModels?: string[];
 };
@@ -293,6 +295,14 @@ export default function DesktopSidebar() {
         permissions: ["get-all", "get-by-id"],
         superadminOnly: true,
       },
+      {
+        id: "activity-logs",
+        name: "Log Aktivitas",
+        icon: History,
+        path: "/activity-logs",
+        permissions: ["get-all"],
+        allowSuperadmin: true,
+      },
     ];
 
     return allItems.filter((item) => {
@@ -300,6 +310,7 @@ export default function DesktopSidebar() {
       if (item.superadminOnly) {
         return isSuperAdmin;
       }
+      if (item.allowSuperadmin && isSuperAdmin) return true;
       if (item.permissionModels) {
         return item.permissionModels.some((model) =>
           checkRoleMulti(model, item.permissions ?? []),
