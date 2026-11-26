@@ -12,6 +12,7 @@ import {
   isDoneListName,
   readTaskTicketFields,
 } from "@/lib/helper/task-ticket";
+import { sendTaskStatusUpdate } from "@/lib/helper/task-public-request-mail";
 
 type Params = {
   params: {
@@ -82,8 +83,9 @@ async function findScopedTask(id: string, tenantId: string | null) {
       ...(tenantId ? { tenantId } : {}),
     },
     include: {
-      list: { select: { id: true, board: { select: { id: true, departmentId: true, tenantId: true } } } },
+      list: { select: { id: true, name: true, board: { select: { id: true, departmentId: true, tenantId: true } } } },
       department: { select: { id: true, name: true, code: true } },
+      tenant: { select: { companyName: true } },
       categories: {
         include: { category: true },
       },
@@ -163,6 +165,7 @@ export async function PUT(req: Request, { params }: Params) {
     const nextListId =
       body.listId !== undefined ? String(body.listId) : existing.listId;
 
+    let movedToList: { name: string } | null = null;
     if (nextListId !== existing.listId) {
       const nextList = await validateList(
         nextListId,
@@ -195,6 +198,7 @@ export async function PUT(req: Request, { params }: Params) {
       } else if (!canManageTaskDepartment(auth.user, existing.list.board.departmentId)) {
         return NextResponse.json({ message: "Forbidden" }, { status: 403 });
       }
+      movedToList = nextList;
     }
 
     const updateData: ReturnType<typeof readTaskTicketFields> & {
@@ -381,6 +385,21 @@ export async function PUT(req: Request, { params }: Params) {
         updatedCategories: body.categoryIds !== undefined,
       },
     });
+
+    // Request dari form publik: kabari pemohon setiap kali status (list) berubah, tanpa menahan respons drag.
+    if (movedToList && existing.requesterEmail) {
+      void sendTaskStatusUpdate({
+        tenantId: existing.tenantId,
+        to: existing.requesterEmail,
+        companyName: existing.tenant?.companyName || "",
+        departmentName: existing.department.name,
+        ticketNumber: task.ticketNumber,
+        requesterName: existing.requester || "Bapak/Ibu",
+        title: task.title,
+        previousStatus: existing.list.name,
+        status: movedToList.name,
+      }).catch((error) => console.error("SEND TASK STATUS EMAIL ERROR:", error));
+    }
 
     return NextResponse.json({
       message: "Task successfully updated",
