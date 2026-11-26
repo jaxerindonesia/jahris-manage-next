@@ -57,6 +57,11 @@ export type TaskDetail = {
   startDate?: string | null;
   dueDate?: string | null;
   listName: string;
+  requester?: string | null;
+  requesterEmail?: string | null;
+  requesterPhone?: string | null;
+  requesterDivision?: string | null;
+  requestType?: string | null;
   members: { user: Member }[];
   categories: { category: { id: string; name: string } }[];
   attachments: TaskAttachment[];
@@ -544,6 +549,26 @@ export function TaskManagementDialogs({
                     <p className="whitespace-pre-wrap rounded-lg border border-gray-100 bg-gray-50 p-3 text-sm text-gray-700 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300">
                       {detailTask.description}
                     </p>
+                  </div>
+                )}
+
+                {detailTask.requesterEmail && (
+                  <div>
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Data Pemohon</p>
+                    <dl className="grid grid-cols-1 gap-3 rounded-lg border border-violet-100 bg-violet-50/60 p-3 text-sm dark:border-violet-900/50 dark:bg-violet-950/20 sm:grid-cols-2">
+                      {[
+                        ["Nama", detailTask.requester],
+                        ["Email", detailTask.requesterEmail],
+                        ["Divisi", detailTask.requesterDivision],
+                        ["WhatsApp / Ext.", detailTask.requesterPhone],
+                        ["Jenis Request", detailTask.requestType],
+                      ].map(([label, value]) => (
+                        <div key={label}>
+                          <dt className="text-xs text-gray-500">{label}</dt>
+                          <dd className="break-words text-gray-800 dark:text-gray-200">{value || "-"}</dd>
+                        </div>
+                      ))}
+                    </dl>
                   </div>
                 )}
 

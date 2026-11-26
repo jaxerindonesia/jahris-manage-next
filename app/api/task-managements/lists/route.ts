@@ -5,8 +5,9 @@ import prisma from "@/lib/prisma";
 import { ensureTenantScope, requireSessionUser } from "@/lib/auth/tenant";
 import { canManageTaskDepartment } from "@/lib/auth/task-management";
 import { requirePermission } from "@/lib/auth/permission";
+import { ensureRequestQueueList } from "@/lib/helper/task-public-request";
 
-const DEFAULT_LISTS = ["To Do", "On Progress", "Review", "Done"];
+const DEFAULT_LISTS = ["Antrian Request", "To Do", "On Progress", "Review", "Done"];
 
 async function ensureDepartment(departmentId: string, tenantId: string | null) {
   return prisma.department.findFirst({
@@ -128,6 +129,7 @@ export async function GET(req: NextRequest) {
     }
     const board = await ensureBoard(departmentId, department.tenantId);
     await ensureDefaultLists(board.id);
+    await ensureRequestQueueList(departmentId, department.tenantId);
 
     const lists = await prisma.taskList.findMany({
       where: { boardId: board.id },
