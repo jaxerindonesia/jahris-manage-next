@@ -538,7 +538,7 @@ export function TaskManagementDialogs({
                 </div>
                 <Button variant="outline" size="sm" onClick={printTaskDetail} className="shrink-0">
                   <Printer className="h-4 w-4" />
-                  Print A5
+                  Print
                 </Button>
               </DialogHeader>
 

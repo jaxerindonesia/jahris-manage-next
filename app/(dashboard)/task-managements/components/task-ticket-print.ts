@@ -55,7 +55,10 @@ body{margin:0;font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;co
 .jp .pr .cbs{flex-wrap:nowrap}
 .ref{background:#F1F3F6;border-radius:1.5mm;padding:2mm 3mm;font-size:8pt;color:#525B69}
 .tl{display:grid;grid-template-columns:30mm 1fr 1fr;gap:1.2mm 3mm;align-items:end}
-.tl .n{font-size:8.5pt;font-weight:600;padding-bottom:.8mm}
+.tl .n{font-size:8.5pt;font-weight:600;padding-bottom:.8mm;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tl2{display:grid;grid-template-columns:1fr 1fr;gap:6mm}
+.tl.sm{grid-template-columns:19mm 1fr 1fr;gap:1.2mm 2mm}
+.tl.sm .n{font-size:8pt}
 .sig{display:grid;grid-template-columns:repeat(3,1fr);gap:5mm;margin-top:auto;padding-top:4mm}
 .sig div{display:flex;flex-direction:column;gap:12mm}
 .sig small{border-top:1px solid #14181F;padding-top:1mm;font-size:6.5pt;color:#525B69}
@@ -118,12 +121,22 @@ function attachmentBlock(attachments: { name: string; url: string; type?: string
     .join("")}</ol></div>`;
 }
 
-function buildTimelineRows(data: TaskTicketPrintData) {
-  const stages = data.lists.slice(1).filter((list) => !isRejectedListName(list.name));
-  return stages
-    .map((list) => list.name)
+const TIMELINE_SINGLE_COLUMN_MAX = 4;
+
+function timelineTable(labels: string[], compact: boolean) {
+  const rows = labels
     .map((label) => `<span class="n">${escapeHtml(label)}</span><div class="ln"></div><div class="ln"></div>`)
     .join("");
+  return `<div class="tl${compact ? " sm" : ""}"><span></span><span class="lb">Realisasi</span><span class="lb">Paraf</span>${rows}</div>`;
+}
+
+/** Tahap banyak dibagi dua kolom agar lembar 1 tetap muat di A5. */
+function buildTimeline(data: TaskTicketPrintData) {
+  const labels = data.lists.slice(1).filter((list) => !isRejectedListName(list.name)).map((list) => list.name);
+  if (labels.length <= TIMELINE_SINGLE_COLUMN_MAX) return timelineTable(labels, false);
+
+  const half = Math.ceil(labels.length / 2);
+  return `<div class="tl2">${timelineTable(labels.slice(0, half), true)}${timelineTable(labels.slice(half), true)}</div>`;
 }
 
 /** Target mulai & target selesai (Done) ditampilkan berdampingan dalam satu baris. */
@@ -165,7 +178,7 @@ function buildTicketHtml(data: TaskTicketPrintData) {
     <div class="g2">${field("PIC", pic)}${field("PIC Pendukung", task.supportPic)}</div>
     ${section(3, "Timeline")}
     ${buildTimelineTargets(data)}
-    <div class="tl"><span></span><span class="lb">Realisasi</span><span class="lb">Paraf</span>${buildTimelineRows(data)}</div>
+    ${buildTimeline(data)}
     ${section(4, "Status")}
     <div class="cbs">${data.lists.map((list) => checkbox(list.name, false)).join("")}</div>
     <div class="sig">

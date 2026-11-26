@@ -174,7 +174,7 @@ export function PublicRequestDialog({ open, onOpenChange, departmentId, departme
           <DialogTitle>API Publik Request - {departmentName}</DialogTitle>
           <DialogDescription>
             Bagikan link ini agar siapa pun bisa mengirim request tanpa login. Request yang masuk akan tampil di list
-            Antrian Request.
+            Queue Request.
           </DialogDescription>
         </DialogHeader>
 
