@@ -7,7 +7,10 @@ export const PUBLIC_REQUEST_SOURCE = "PUBLIC_FORM";
 export const PUBLIC_REQUEST_MAX_FILES = 5;
 export const PUBLIC_REQUEST_OTHER_DIVISION = "Lainnya";
 
-export const PUBLIC_REQUEST_TYPES = [
+export const PUBLIC_REQUEST_MAX_TYPES = 20;
+export const PUBLIC_REQUEST_TYPE_MAX_LENGTH = 80;
+
+export const IT_REQUEST_TYPES = [
   "Hardware (PC, laptop, printer)",
   "Software / Instalasi aplikasi",
   "Jaringan / Internet",
@@ -16,6 +19,52 @@ export const PUBLIC_REQUEST_TYPES = [
   "Data / Laporan",
   "Lainnya",
 ] as const;
+
+export const GENERAL_REQUEST_TYPES = [
+  "Permintaan Baru",
+  "Perbaikan / Kendala",
+  "Dokumen / Administrasi",
+  "Data / Laporan",
+  "Informasi / Pertanyaan",
+  "Lainnya",
+] as const;
+
+type RequestTypeDepartment = { name: string; code: string | null };
+
+function isItDepartment(department: RequestTypeDepartment) {
+  return [department.name, department.code ?? ""].some((value) => /^\s*it\b/i.test(value));
+}
+
+export function defaultRequestTypes(department: RequestTypeDepartment): string[] {
+  return [...(isItDepartment(department) ? IT_REQUEST_TYPES : GENERAL_REQUEST_TYPES)];
+}
+
+/** Jenis request untuk form: daftar custom department, atau default bila kosong. */
+export function resolveRequestTypes(
+  department: RequestTypeDepartment & { publicRequestTypes: string[] },
+): string[] {
+  return department.publicRequestTypes.length > 0
+    ? department.publicRequestTypes
+    : defaultRequestTypes(department);
+}
+
+/** Rapikan input admin: trim, buang kosong & duplikat. Null bila melebihi batas. */
+export function normalizeRequestTypes(input: unknown): string[] | null {
+  if (!Array.isArray(input)) return null;
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const item of input) {
+    if (typeof item !== "string") return null;
+    const value = item.trim();
+    if (!value) continue;
+    if (value.length > PUBLIC_REQUEST_TYPE_MAX_LENGTH) return null;
+    const key = value.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(value);
+  }
+  return result.length > PUBLIC_REQUEST_MAX_TYPES ? null : result;
+}
 
 export const PUBLIC_REQUEST_PRIORITIES = [
   { value: "LOW", label: "Rendah", hint: "bisa menunggu" },
@@ -60,6 +109,7 @@ export async function resolvePublicRequestToken(token: string) {
       code: true,
       tenantId: true,
       publicRequestUserId: true,
+      publicRequestTypes: true,
       tenant: { select: { companyName: true, logoUrl: true, isActive: true } },
     },
   });

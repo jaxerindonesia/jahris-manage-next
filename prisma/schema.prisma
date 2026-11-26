@@ -78,6 +78,7 @@ model Department {
   code                String?
   publicRequestKey    String?        @map("public_request_key")
   publicRequestUserId String?        @map("public_request_user_id") @db.Uuid
+  publicRequestTypes  String[]       @default([]) @map("public_request_types")
   createdAt           DateTime       @default(now()) @map("created_at")
   updatedAt           DateTime       @updatedAt @map("updated_at")
   deletedAt           DateTime?      @map("deleted_at")
