@@ -212,10 +212,6 @@ export function PublicRequestFormData({ token, options, onSubmitted }: Props) {
       )}
 
       <div className="flex items-center justify-between gap-3">
-        <Button type="submit" disabled={submitting} className="bg-blue-600 text-white hover:bg-blue-700">
-          {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-          {submitting ? "Mengirim..." : "Kirim Request"}
-        </Button>
         <Button
           type="button"
           variant="ghost"
@@ -227,6 +223,10 @@ export function PublicRequestFormData({ token, options, onSubmitted }: Props) {
           }}
         >
           Kosongkan form
+        </Button>
+        <Button type="submit" disabled={submitting} className="bg-blue-600 text-white hover:bg-blue-700">
+          {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+          {submitting ? "Mengirim..." : "Kirim Request"}
         </Button>
       </div>
     </form>

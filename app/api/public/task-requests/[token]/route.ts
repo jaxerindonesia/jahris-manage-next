@@ -26,6 +26,7 @@ import {
   resolvePublicRequestToken,
 } from "@/lib/helper/task-public-request";
 import { sendTaskRequestConfirmation } from "@/lib/helper/task-public-request-mail";
+import { getJakartaDayKey } from "@/lib/helper/date";
 import type {
   TaskPublicRequestFormDto,
   TaskPublicRequestResultDto,
@@ -122,10 +123,14 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
       return NextResponse.json({ message: "Prioritas tidak valid" }, { status: 400 });
     }
 
-    const startDate = new Date();
-    const neededDate = neededDateRaw ? new Date(`${neededDateRaw}T00:00:00`) : null;
-    if (neededDate && Number.isNaN(neededDate.getTime())) {
+    // Sama dengan form task admin: tanggal disimpan sebagai tengah malam UTC (YYYY-MM-DD), hari dihitung WIB.
+    const startDate = getJakartaDayKey(new Date());
+    const neededDate = neededDateRaw ? new Date(`${neededDateRaw}T00:00:00.000Z`) : null;
+    if (neededDate && (!/^\d{4}-\d{2}-\d{2}$/.test(neededDateRaw) || Number.isNaN(neededDate.getTime()))) {
       return NextResponse.json({ message: "Tanggal dibutuhkan tidak valid" }, { status: 400 });
+    }
+    if (neededDate && neededDate < startDate) {
+      return NextResponse.json({ message: "Tanggal dibutuhkan tidak boleh sebelum hari ini" }, { status: 400 });
     }
 
     const files = formData.getAll("files").filter((file): file is File => file instanceof File && file.size > 0);
@@ -185,7 +190,7 @@ export async function POST(req: NextRequest, { params }: RouteContext) {
           source: PUBLIC_REQUEST_SOURCE,
           ticketNumber: await generateTaskTicketNumber(prisma, department),
           startDate,
-          dueDate: neededDate && neededDate >= startDate ? neededDate : null,
+          dueDate: neededDate,
           position,
           listId: queueList.id,
           departmentId: department.id,
