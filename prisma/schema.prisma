@@ -18,43 +18,44 @@ enum JournalStatus {
 }
 
 model Tenant {
-  id                      String                   @id @default(uuid()) @db.Uuid
-  companyName             String                   @map("company_name")
-  adminEmail              String                   @map("admin_email")
-  isActive                Boolean                  @default(true) @map("is_active")
-  subscriptionStart       DateTime?                @map("subscription_start")
-  subscriptionEnd         DateTime?                @map("subscription_end")
-  createdAt               DateTime                 @default(now()) @map("created_at")
-  updatedAt               DateTime                 @updatedAt @map("updated_at")
-  logoUrl                 String?                  @map("logo_url")
-  logoDarkUrl             String?                  @map("logo_dark_url")
-  attendanceConfigs       AttendanceConfig[]
+  id                         String                      @id @default(uuid()) @db.Uuid
+  companyName                String                      @map("company_name")
+  adminEmail                 String                      @map("admin_email")
+  isActive                   Boolean                     @default(true) @map("is_active")
+  subscriptionStart          DateTime?                   @map("subscription_start")
+  subscriptionEnd            DateTime?                   @map("subscription_end")
+  createdAt                  DateTime                    @default(now()) @map("created_at")
+  updatedAt                  DateTime                    @updatedAt @map("updated_at")
+  logoUrl                    String?                     @map("logo_url")
+  logoDarkUrl                String?                     @map("logo_dark_url")
+  attendanceConfigs          AttendanceConfig[]
   attendanceAbsentDeductions AttendanceAbsentDeduction[]
-  attendances             Attendance[]
-  overtimeConfigs         OvertimeConfig[]
-  overtimeApproverConfigs OvertimeApproverConfig[]
-  overtimes               Overtime[]
-  payrollComponentConfigs PayrollComponentConfig[]
-  departments             Department[]
-  branches                Branch[]
-  workShifts              WorkShift[]
-  employeeShiftSchedules  EmployeeShiftSchedule[]
-  leaveConfigs            LeaveConfig[]
-  payrolls                Payroll[]
-  performances            Performance[]
-  reimbursements          Reimbursement[]
-  roles                   Role[]
-  submissionTypes         SubmissionType[]
-  submissions             Submission[]
-  pettyCashes             PettyCash[]
-  accounts                Account[]
-  accountCategories       AccountCategory[]
-  banks                   Bank[]
-  customers               Customer[]
-  vendors                 Vendor[]
-  taskBoards              TaskBoard[]
-  tasks                   Task[]
-  users                   User[]
+  attendances                Attendance[]
+  overtimeConfigs            OvertimeConfig[]
+  overtimeApproverConfigs    OvertimeApproverConfig[]
+  overtimes                  Overtime[]
+  payrollComponentConfigs    PayrollComponentConfig[]
+  departments                Department[]
+  branches                   Branch[]
+  workShifts                 WorkShift[]
+  employeeShiftSchedules     EmployeeShiftSchedule[]
+  leaveConfigs               LeaveConfig[]
+  payrolls                   Payroll[]
+  performances               Performance[]
+  reimbursements             Reimbursement[]
+  roles                      Role[]
+  submissionTypes            SubmissionType[]
+  submissions                Submission[]
+  pettyCashes                PettyCash[]
+  accounts                   Account[]
+  accountCategories          AccountCategory[]
+  banks                      Bank[]
+  customers                  Customer[]
+  vendors                    Vendor[]
+  taskBoards                 TaskBoard[]
+  tasks                      Task[]
+  users                      User[]
+  mailConfig                 TenantMailConfig?
 
   @@map("tenants")
 }
@@ -72,19 +73,23 @@ model Role {
 }
 
 model Department {
-  id             String         @id @default(uuid()) @db.Uuid
-  name           String
-  createdAt      DateTime       @default(now()) @map("created_at")
-  updatedAt      DateTime       @updatedAt @map("updated_at")
-  deletedAt      DateTime?      @map("deleted_at")
-  tenantId       String?        @map("tenant_id") @db.Uuid
-  branchId       String?        @map("branch_id") @db.Uuid
-  tenant         Tenant?        @relation(fields: [tenantId], references: [id])
-  branch         Branch?        @relation(fields: [branchId], references: [id], onDelete: SetNull)
-  taskBoards     TaskBoard[]
-  taskCategories TaskCategory[]
-  tasks          Task[]
-  users          User[]
+  id                  String         @id @default(uuid()) @db.Uuid
+  name                String
+  code                String?
+  publicRequestKey    String?        @map("public_request_key")
+  publicRequestUserId String?        @map("public_request_user_id") @db.Uuid
+  publicRequestTypes  String[]       @default([]) @map("public_request_types")
+  createdAt           DateTime       @default(now()) @map("created_at")
+  updatedAt           DateTime       @updatedAt @map("updated_at")
+  deletedAt           DateTime?      @map("deleted_at")
+  tenantId            String?        @map("tenant_id") @db.Uuid
+  branchId            String?        @map("branch_id") @db.Uuid
+  tenant              Tenant?        @relation(fields: [tenantId], references: [id])
+  branch              Branch?        @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  taskBoards          TaskBoard[]
+  taskCategories      TaskCategory[]
+  tasks               Task[]
+  users               User[]
 
   @@unique([tenantId, branchId, name])
   @@index([tenantId])
@@ -383,26 +388,26 @@ model AttendanceConfig {
 }
 
 model AttendanceAbsentDeduction {
-  id        String   @id @default(uuid()) @db.Uuid
-  tenantId  String   @map("tenant_id") @db.Uuid
-  dayOfWeek String   @map("day_of_week")
-  amount    Float    @default(0)
-  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id        String @id @default(uuid()) @db.Uuid
+  tenantId  String @map("tenant_id") @db.Uuid
+  dayOfWeek String @map("day_of_week")
+  amount    Float  @default(0)
+  tenant    Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([tenantId, dayOfWeek])
   @@map("attendance_absent_deductions")
 }
 
 model OvertimeConfig {
-  id         String   @id @default(uuid()) @db.Uuid
-  tenantId   String?  @map("tenant_id") @db.Uuid
-  payMethod  String   @default("PER_HOUR") @map("pay_method")
-  hourlyRate Float    @default(0) @map("hourly_rate")
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String?  @map("tenant_id") @db.Uuid
+  payMethod   String   @default("PER_HOUR") @map("pay_method")
+  hourlyRate  Float    @default(0) @map("hourly_rate")
   dailyRate   Float    @default(0) @map("daily_rate")
   hideNominal Boolean  @default(false) @map("hide_nominal")
-  createdAt  DateTime @default(now()) @map("created_at")
-  updatedAt  DateTime @updatedAt @map("updated_at")
-  tenant     Tenant?  @relation(fields: [tenantId], references: [id])
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  tenant      Tenant?  @relation(fields: [tenantId], references: [id])
 
   @@index([tenantId])
   @@map("overtime_configs")
@@ -476,34 +481,34 @@ model OvertimeApprovalDecision {
 }
 
 model Payroll {
-  id                  String                  @id @default(uuid()) @db.Uuid
-  userId              String                  @map("user_id") @db.Uuid
-  referenceNumber     String?                 @map("reference_number")
-  month               Int
-  year                Int
-  periodStartDate     DateTime?               @map("period_start_date") @db.Date
-  periodEndDate       DateTime?               @map("period_end_date") @db.Date
-  basicSalary         Float                   @map("basic_salary")
-  salaryType          String                  @default("monthly") @map("salary_type")
-  salaryRate          Float                   @default(0) @map("salary_rate")
-  paidAttendanceDays  Int                     @default(0) @map("paid_attendance_days")
-  lateDeductionRate   Float                   @default(0) @map("late_deduction_rate")
-  lateAttendanceDays  Int                     @default(0) @map("late_attendance_days")
-  lateDeductionAmount Float                   @default(0) @map("late_deduction_amount")
-  absentAttendanceDays Int                    @default(0) @map("absent_attendance_days")
-  absentDeductionAmount Float                  @default(0) @map("absent_deduction_amount")
-  allowances          Float                   @default(0)
-  deductions          Float                   @default(0)
-  totalSalary         Float                   @map("total_salary")
-  status              String                  @default("pending")
-  paidAt              DateTime?               @map("paid_at")
-  createdAt           DateTime                @default(now()) @map("created_at")
-  updatedAt           DateTime                @updatedAt @map("updated_at")
-  deletedAt           DateTime?               @map("deleted_at")
-  tenantId            String?                 @map("tenant_id") @db.Uuid
-  componentValues     PayrollComponentValue[]
-  tenant              Tenant?                 @relation(fields: [tenantId], references: [id])
-  user                User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                    String                  @id @default(uuid()) @db.Uuid
+  userId                String                  @map("user_id") @db.Uuid
+  referenceNumber       String?                 @map("reference_number")
+  month                 Int
+  year                  Int
+  periodStartDate       DateTime?               @map("period_start_date") @db.Date
+  periodEndDate         DateTime?               @map("period_end_date") @db.Date
+  basicSalary           Float                   @map("basic_salary")
+  salaryType            String                  @default("monthly") @map("salary_type")
+  salaryRate            Float                   @default(0) @map("salary_rate")
+  paidAttendanceDays    Int                     @default(0) @map("paid_attendance_days")
+  lateDeductionRate     Float                   @default(0) @map("late_deduction_rate")
+  lateAttendanceDays    Int                     @default(0) @map("late_attendance_days")
+  lateDeductionAmount   Float                   @default(0) @map("late_deduction_amount")
+  absentAttendanceDays  Int                     @default(0) @map("absent_attendance_days")
+  absentDeductionAmount Float                   @default(0) @map("absent_deduction_amount")
+  allowances            Float                   @default(0)
+  deductions            Float                   @default(0)
+  totalSalary           Float                   @map("total_salary")
+  status                String                  @default("pending")
+  paidAt                DateTime?               @map("paid_at")
+  createdAt             DateTime                @default(now()) @map("created_at")
+  updatedAt             DateTime                @updatedAt @map("updated_at")
+  deletedAt             DateTime?               @map("deleted_at")
+  tenantId              String?                 @map("tenant_id") @db.Uuid
+  componentValues       PayrollComponentValue[]
+  tenant                Tenant?                 @relation(fields: [tenantId], references: [id])
+  user                  User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
   @@index([referenceNumber])
@@ -573,25 +578,25 @@ model Performance {
 }
 
 model Reimbursement {
-  id              String    @id @default(uuid()) @db.Uuid
-  userId          String    @map("user_id") @db.Uuid
-  referenceNumber String?   @map("reference_number")
+  id              String                @id @default(uuid()) @db.Uuid
+  userId          String                @map("user_id") @db.Uuid
+  referenceNumber String?               @map("reference_number")
   title           String
   category        String
   amount          Float
   date            DateTime
-  bankName        String?   @map("bank_name")
-  accountNumber   String?   @map("account_number")
+  bankName        String?               @map("bank_name")
+  accountNumber   String?               @map("account_number")
   description     String?
-  receiptUrl      String?   @map("receipt_url")
-  status          String    @default("pending")
-  approvedBy      String?   @map("approved_by")
-  approvedAt      DateTime? @map("approved_at")
-  createdAt       DateTime  @default(now()) @map("created_at")
-  updatedAt       DateTime  @updatedAt @map("updated_at")
-  tenantId        String?   @map("tenant_id") @db.Uuid
-  tenant          Tenant?   @relation(fields: [tenantId], references: [id])
-  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  receiptUrl      String?               @map("receipt_url")
+  status          String                @default("pending")
+  approvedBy      String?               @map("approved_by")
+  approvedAt      DateTime?             @map("approved_at")
+  createdAt       DateTime              @default(now()) @map("created_at")
+  updatedAt       DateTime              @updatedAt @map("updated_at")
+  tenantId        String?               @map("tenant_id") @db.Uuid
+  tenant          Tenant?               @relation(fields: [tenantId], references: [id])
+  user            User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
   details         ReimbursementDetail[]
 
   @@index([tenantId])
@@ -640,17 +645,17 @@ model PettyCash {
 }
 
 model PettyCashUsage {
-  id          String    @id @default(uuid()) @db.Uuid
-  pettyCashId String    @map("petty_cash_id") @db.Uuid
-  description String
-  amount      Float
-  usageDate   DateTime  @map("usage_date")
-  receiptUrl  String?   @map("receipt_url")
-  receiptUrls String[]  @default([]) @map("receipt_urls")
-  transactionType String @default("EXPENSE") @map("transaction_type")
-  createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime  @updatedAt @map("updated_at")
-  pettyCash   PettyCash @relation(fields: [pettyCashId], references: [id], onDelete: Cascade)
+  id              String    @id @default(uuid()) @db.Uuid
+  pettyCashId     String    @map("petty_cash_id") @db.Uuid
+  description     String
+  amount          Float
+  usageDate       DateTime  @map("usage_date")
+  receiptUrl      String?   @map("receipt_url")
+  receiptUrls     String[]  @default([]) @map("receipt_urls")
+  transactionType String    @default("EXPENSE") @map("transaction_type")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  pettyCash       PettyCash @relation(fields: [pettyCashId], references: [id], onDelete: Cascade)
 
   @@index([pettyCashId])
   @@map("petty_cash_usages")
@@ -828,27 +833,39 @@ model TaskList {
 }
 
 model Task {
-  id           String               @id @default(uuid()) @db.Uuid
-  title        String
-  description  String?
-  dueDate      DateTime?            @map("due_date")
-  position     Int                  @default(0)
-  listId       String               @map("list_id") @db.Uuid
-  departmentId String               @map("department_id") @db.Uuid
-  createdAt    DateTime             @default(now()) @map("created_at")
-  updatedAt    DateTime             @updatedAt @map("updated_at")
-  tenantId     String?              @map("tenant_id") @db.Uuid
-  createdById  String               @map("created_by_id") @db.Uuid
-  deletedAt    DateTime?            @map("deleted_at")
-  startDate    DateTime             @map("start_date")
-  attachments  TaskAttachment[]
-  categories   TaskCategoryOnTask[]
-  members      TaskMember[]
-  createdBy    User                 @relation("task_creator", fields: [createdById], references: [id], onDelete: Cascade)
-  department   Department           @relation(fields: [departmentId], references: [id], onDelete: Cascade)
-  list         TaskList             @relation(fields: [listId], references: [id], onDelete: Cascade)
-  tenant       Tenant?              @relation(fields: [tenantId], references: [id])
+  id                String               @id @default(uuid()) @db.Uuid
+  title             String
+  description       String?
+  dueDate           DateTime?            @map("due_date")
+  position          Int                  @default(0)
+  listId            String               @map("list_id") @db.Uuid
+  departmentId      String               @map("department_id") @db.Uuid
+  createdAt         DateTime             @default(now()) @map("created_at")
+  updatedAt         DateTime             @updatedAt @map("updated_at")
+  tenantId          String?              @map("tenant_id") @db.Uuid
+  createdById       String               @map("created_by_id") @db.Uuid
+  deletedAt         DateTime?            @map("deleted_at")
+  startDate         DateTime             @map("start_date")
+  ticketNumber      String?              @map("ticket_number")
+  priority          String?
+  requester         String?
+  supportPic        String?              @map("support_pic")
+  objective         String?
+  scope             String?
+  requesterEmail    String?              @map("requester_email")
+  requesterPhone    String?              @map("requester_phone")
+  requesterDivision String?              @map("requester_division")
+  requestType       String?              @map("request_type")
+  source            String?
+  attachments       TaskAttachment[]
+  categories        TaskCategoryOnTask[]
+  members           TaskMember[]
+  createdBy         User                 @relation("task_creator", fields: [createdById], references: [id], onDelete: Cascade)
+  department        Department           @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  list              TaskList             @relation(fields: [listId], references: [id], onDelete: Cascade)
+  tenant            Tenant?              @relation(fields: [tenantId], references: [id])
 
+  @@unique([departmentId, ticketNumber])
   @@index([listId])
   @@index([departmentId])
   @@index([createdById])
@@ -911,6 +928,23 @@ model TaskAttachment {
 
   @@index([taskId])
   @@map("task_attachments")
+}
+
+model TenantMailConfig {
+  id                String   @id @default(uuid()) @db.Uuid
+  tenantId          String   @unique @map("tenant_id") @db.Uuid
+  host              String
+  port              Int      @default(587)
+  secure            Boolean  @default(false)
+  username          String
+  passwordEncrypted String   @map("password_encrypted")
+  fromName          String?  @map("from_name")
+  fromEmail         String   @map("from_email")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+  tenant            Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("tenant_mail_configs")
 }
 
 model ActivityLog {

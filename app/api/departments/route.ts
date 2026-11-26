@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { ensureTenantScope, requireSessionUser } from "@/lib/auth/tenant";
 import { requirePermission } from "@/lib/auth/permission";
+import { normalizeDepartmentCode } from "@/lib/helper/task-ticket";
 
 export async function GET() {
   try {
@@ -19,6 +20,7 @@ export async function GET() {
       select: {
         id: true,
         name: true,
+        code: true,
         tenantId: true,
         branchId: true,
         createdAt: true,
@@ -101,7 +103,7 @@ export async function POST(req: NextRequest) {
     }
 
     const department = await prisma.department.create({
-      data: { name: rawName, tenantId: finalTenantId, branchId },
+      data: { name: rawName, code: normalizeDepartmentCode(body.code), tenantId: finalTenantId, branchId },
     });
 
     return NextResponse.json(

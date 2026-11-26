@@ -9,37 +9,12 @@ import { requirePermission } from "@/lib/auth/permission";
 import { consumeRateLimit } from "@/lib/security/rate-limit";
 import { getRequestIp } from "@/lib/security/request";
 import { validateAttachmentBuffer } from "@/lib/security/file-validation";
-
-const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024;
-const ALLOWED_ATTACHMENT_EXTENSIONS = new Set([
-  ".jpg",
-  ".jpeg",
-  ".png",
-  ".pdf",
-  ".xls",
-  ".xlsx",
-  ".csv",
-  ".doc",
-  ".docx",
-  ".ppt",
-  ".pptx",
-]);
-
-function safeName(name: string) {
-  return name.replace(/[^\w.\-]+/g, "_");
-}
-
-function isAllowedAttachment(fileName: string) {
-  const lower = fileName.toLowerCase();
-  return Array.from(ALLOWED_ATTACHMENT_EXTENSIONS).some((ext) => lower.endsWith(ext));
-}
-
-function inferKind(fileName: string, mimeType: string) {
-  const lower = fileName.toLowerCase();
-  if (mimeType === "application/pdf" || lower.endsWith(".pdf")) return "PDF";
-  if (mimeType.startsWith("image/")) return "Foto";
-  return "File";
-}
+import {
+  TASK_ATTACHMENT_MAX_SIZE,
+  inferTaskAttachmentKind,
+  isAllowedTaskAttachment,
+  safeAttachmentName,
+} from "@/lib/helper/attachment";
 
 export async function POST(req: NextRequest) {
   try {
@@ -68,13 +43,13 @@ export async function POST(req: NextRequest) {
     if (!(file instanceof File) || file.size === 0) {
       return NextResponse.json({ message: "File is required" }, { status: 400 });
     }
-    if (file.size > MAX_ATTACHMENT_SIZE) {
+    if (file.size > TASK_ATTACHMENT_MAX_SIZE) {
       return NextResponse.json(
         { message: "File maksimal 10 MB" },
         { status: 413 },
       );
     }
-    if (!isAllowedAttachment(file.name || "")) {
+    if (!isAllowedTaskAttachment(file.name || "")) {
       return NextResponse.json(
         {
           message: "Format file harus jpg, jpeg, png, pdf, xls, xlsx, csv, doc, docx, ppt, atau pptx",
@@ -93,7 +68,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ message: validation.message }, { status: 415 });
     }
 
-    const fileName = safeName(file.name || "attachment");
+    const fileName = safeAttachmentName(file.name || "attachment");
     const objectKey = await buildTenantStorageObjectName(
       auth.user.tenantId,
       "task-attachments",
@@ -112,7 +87,7 @@ export async function POST(req: NextRequest) {
         url,
         objectKey,
         name: file.name || fileName,
-        type: inferKind(file.name || fileName, file.type || ""),
+        type: inferTaskAttachmentKind(file.name || fileName, file.type || ""),
         size: file.size,
       },
       { status: 201 },

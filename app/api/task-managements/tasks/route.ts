@@ -6,6 +6,11 @@ import { ensureTenantScope, requireSessionUser } from "@/lib/auth/tenant";
 import { canManageTaskDepartment } from "@/lib/auth/task-management";
 import { requirePermission } from "@/lib/auth/permission";
 import { writeAuditLog } from "@/lib/security/audit-log";
+import {
+  createWithTicketRetry,
+  generateTaskTicketNumber,
+  readTaskTicketFields,
+} from "@/lib/helper/task-ticket";
 
 type AttachmentInput = {
   name: string;
@@ -38,7 +43,12 @@ async function resolveList(listId: string, departmentId: string, tenantId: strin
     },
     include: {
       board: {
-        select: { id: true, departmentId: true, tenantId: true },
+        select: {
+          id: true,
+          departmentId: true,
+          tenantId: true,
+          department: { select: { id: true, name: true, code: true } },
+        },
       },
     },
   });
@@ -161,9 +171,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const task = await prisma.task.create({
+    const ticketFields = readTaskTicketFields(body);
+    const createTask = async () => prisma.task.create({
       data: {
         title,
+        ...ticketFields,
+        ticketNumber: await generateTaskTicketNumber(prisma, list.board.department),
         description: body.description ? String(body.description) : null,
         startDate,
         dueDate,
@@ -199,6 +212,8 @@ export async function POST(req: NextRequest) {
         attachments: true,
       },
     });
+
+    const task = await createWithTicketRetry(createTask);
 
     writeAuditLog({
       action: "tasks.create",

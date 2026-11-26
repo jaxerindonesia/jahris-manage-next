@@ -29,6 +29,7 @@ export default function DepartmentModal({
   onRefresh: () => void;
 }) {
   const [newType, setNewType] = useState("");
+  const [newCode, setNewCode] = useState("");
   const [branchId, setBranchId] = useState("none");
   const [loading, setLoading] = useState(false);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
@@ -51,6 +52,7 @@ export default function DepartmentModal({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: newType.trim(),
+          code: newCode.trim() || null,
           branchId: branchId === "none" ? null : branchId,
           tenantId: branchId === "none"
             ? null
@@ -66,12 +68,35 @@ export default function DepartmentModal({
 
       toast.success("Departemen berhasil ditambahkan");
       setNewType("");
+      setNewCode("");
       setBranchId("none");
       onRefresh();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Terjadi kesalahan");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleUpdateCode = async (dept: DepartmentDto, rawCode: string) => {
+    const code = rawCode.trim().toUpperCase();
+    if (code === (dept.code || "")) return;
+
+    try {
+      const res = await fetch(`/api/departments/${dept.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: code || null }),
+      });
+
+      if (!res.ok) {
+        throw new Error(await parseApiError(res, "Gagal mengubah kode departemen"));
+      }
+
+      toast.success("Kode departemen berhasil diubah");
+      onRefresh();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Gagal mengubah kode departemen");
     }
   };
 
@@ -143,6 +168,13 @@ export default function DepartmentModal({
               onChange={(e) => setNewType(e.target.value)}
               placeholder="Tambah departemen baru..."
             />
+            <Input
+              value={newCode}
+              onChange={(e) => setNewCode(e.target.value.toUpperCase())}
+              placeholder="Kode (IT)"
+              maxLength={6}
+              className="w-28 uppercase"
+            />
             <Button type="submit" disabled={!newType.trim() || loading}>
               Tambah
             </Button>
@@ -159,14 +191,31 @@ export default function DepartmentModal({
                   <p className="text-xs text-muted-foreground">{dept.branch?.name || "Tanpa cabang"}</p>
                 </div>
 
-                <Button
-                  type="button"
-                  variant="destructive"
-                  size="sm"
-                  onClick={() => handleDelete(dept.id)}
-                >
-                  <Trash2 className="w-4 h-4" />
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Input
+                    key={`${dept.id}-${dept.code ?? ""}`}
+                    defaultValue={dept.code || ""}
+                    onBlur={(e) => handleUpdateCode(dept, e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        e.currentTarget.blur();
+                      }
+                    }}
+                    placeholder="Kode"
+                    title="Kode departemen untuk nomor tiket task"
+                    maxLength={6}
+                    className="h-8 w-24 uppercase"
+                  />
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => handleDelete(dept.id)}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                </div>
               </div>
             ))}
 

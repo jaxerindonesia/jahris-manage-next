@@ -10,6 +10,7 @@ import {
   Clock3,
   FileText,
   Grid3X3,
+  Link2,
   List,
   ListPlus,
   Plus,
@@ -33,7 +34,9 @@ import {
 } from "@/lib/helper/date";
 import { normalizeAttachmentType } from "@/lib/helper/attachment";
 import { parseApiError } from "@/lib/helper/response-api";
-import { TaskManagementDialogs, type TaskDetail } from "./components/task-management-dialogs";
+import { TaskManagementDialogs, type TaskDetail, type TaskFormState } from "./components/task-management-dialogs";
+import { printTaskTicket } from "./components/task-ticket-print";
+import { PublicRequestDialog } from "./components/public-request-dialog";
 import { TaskManagementWorkspace } from "./components/task-management-workspace";
 
 type DepartmentCard = {
@@ -77,6 +80,16 @@ type TaskCard = {
   startDate?: string | null;
   dueDate?: string | null;
   createdAt?: string | null;
+  ticketNumber?: string | null;
+  priority?: string | null;
+  requester?: string | null;
+  supportPic?: string | null;
+  requesterEmail?: string | null;
+  requesterPhone?: string | null;
+  requesterDivision?: string | null;
+  requestType?: string | null;
+  objective?: string | null;
+  scope?: string | null;
   position: number;
   listId: string;
   departmentId: string;
@@ -96,6 +109,8 @@ type BoardData = {
   department: {
     id: string;
     name: string;
+    code?: string | null;
+    tenant?: { companyName: string } | null;
     tenantId?: string | null;
     branchId?: string | null;
     branch?: { id: string; name: string; code?: string | null } | null;
@@ -104,21 +119,14 @@ type BoardData = {
   lists: TaskList[];
 };
 
-type TaskFormState = {
-  id?: string;
-  title: string;
-  description: string;
-  startDate: string;
-  dueDate: string;
-  listId: string;
-  memberIds: string[];
-  categoryIds: string[];
-  attachments: TaskAttachment[];
-};
-
 const EMPTY_TASK_FORM: TaskFormState = {
   title: "",
   description: "",
+  priority: "",
+  requester: "",
+  supportPic: "",
+  objective: "",
+  scope: "",
   startDate: "",
   dueDate: "",
   listId: "",
@@ -241,6 +249,7 @@ export default function TaskManagementPage() {
   const [taskFilters, setTaskFilters] = useState<TaskFilters>(EMPTY_TASK_FILTERS);
   const [taskFiltersOpen, setTaskFiltersOpen] = useState(false);
   const [donePermissionDialogOpen, setDonePermissionDialogOpen] = useState(false);
+  const [publicRequestDialogOpen, setPublicRequestDialogOpen] = useState(false);
   const [donePermissionUserIds, setDonePermissionUserIds] = useState<string[]>([]);
   const [savingDonePermissions, setSavingDonePermissions] = useState(false);
   const [savingTask, setSavingTask] = useState(false);
@@ -460,6 +469,11 @@ export default function TaskManagementPage() {
       id: task.id,
       title: task.title,
       description: task.description || "",
+      priority: task.priority || "",
+      requester: task.requester || "",
+      supportPic: task.supportPic || "",
+      objective: task.objective || "",
+      scope: task.scope || "",
       startDate: task.startDate ? task.startDate.slice(0, 10) : "",
       dueDate: task.dueDate ? task.dueDate.slice(0, 10) : "",
       listId: task.listId,
@@ -483,10 +497,28 @@ export default function TaskManagementPage() {
       description: task.description || null,
       startDate: task.startDate || null,
       dueDate: task.dueDate || null,
+      ticketNumber: task.ticketNumber || null,
       listName: board?.lists.find((list) => list.id === task.listId)?.name || "-",
+      requester: task.requester || null,
+      requesterEmail: task.requesterEmail || null,
+      requesterPhone: task.requesterPhone || null,
+      requesterDivision: task.requesterDivision || null,
+      requestType: task.requestType || null,
       members: task.members,
       categories: task.categories,
       attachments: task.attachments,
+    });
+  };
+
+  const printTaskDetail = () => {
+    const task = taskDetail ? taskById.get(taskDetail.id) : null;
+    if (!task || !board) return;
+
+    printTaskTicket({
+      task,
+      department: board.department,
+      lists: board.lists,
+      categories,
     });
   };
 
@@ -683,6 +715,11 @@ export default function TaskManagementPage() {
       const payload = {
         title: taskForm.title.trim(),
         description: taskForm.description.trim() || null,
+        priority: taskForm.priority || null,
+        requester: taskForm.requester.trim() || null,
+        supportPic: taskForm.supportPic.trim() || null,
+        objective: taskForm.objective.trim() || null,
+        scope: taskForm.scope.trim() || null,
         startDate: taskForm.startDate || null,
         dueDate: taskForm.dueDate || null,
         listId: taskForm.listId,
@@ -1420,6 +1457,16 @@ export default function TaskManagementPage() {
             </Button>
             {canManageSelectedDepartment && (
               <Button
+                onClick={() => setPublicRequestDialogOpen(true)}
+                disabled={!selectedDepartmentId}
+                className="h-10 rounded-lg bg-violet-600 px-4 text-white shadow-sm hover:bg-violet-700"
+              >
+                <Link2 className="h-4 w-4" />
+                Generate API Publik
+              </Button>
+            )}
+            {canManageSelectedDepartment && (
+              <Button
                 onClick={() => setListDialogOpen(true)}
                 disabled={!selectedDepartmentId}
                 className="h-10 rounded-lg bg-blue-600 px-4 text-white shadow-sm hover:bg-blue-700"
@@ -1625,6 +1672,7 @@ export default function TaskManagementPage() {
           createCategory={createCategory}
           deleteCategory={deleteCategory}
           closeTaskDetail={closeTaskDetail}
+          printTaskDetail={printTaskDetail}
           closeTaskModal={closeTaskModal}
           saveTask={saveTask}
           setListDialogOpen={setListDialogOpen}
@@ -1690,6 +1738,15 @@ export default function TaskManagementPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        {canManageSelectedDepartment && selectedDepartmentId && (
+          <PublicRequestDialog
+            open={publicRequestDialogOpen}
+            onOpenChange={setPublicRequestDialogOpen}
+            departmentId={selectedDepartmentId}
+            departmentName={board?.department.name || selectedDepartment?.name || "Department"}
+            onLinkGenerated={() => fetchBoard(selectedDepartmentId)}
+          />
+        )}
       </div>
     </>
   );

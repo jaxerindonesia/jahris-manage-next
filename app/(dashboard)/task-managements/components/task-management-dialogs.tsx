@@ -1,10 +1,11 @@
 import { Dispatch, RefObject, SetStateAction } from "react";
-import { Eye, Plus, Save, Trash2, X } from "lucide-react";
+import { Eye, Plus, Printer, Save, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { TASK_PRIORITIES } from "@/lib/helper/task-ticket";
 
 export type TaskAttachment = {
   id?: string;
@@ -35,6 +36,11 @@ export type TaskFormState = {
   id?: string;
   title: string;
   description: string;
+  priority: string;
+  requester: string;
+  supportPic: string;
+  objective: string;
+  scope: string;
   startDate: string;
   dueDate: string;
   listId: string;
@@ -45,11 +51,17 @@ export type TaskFormState = {
 
 export type TaskDetail = {
   id: string;
+  ticketNumber?: string | null;
   title: string;
   description?: string | null;
   startDate?: string | null;
   dueDate?: string | null;
   listName: string;
+  requester?: string | null;
+  requesterEmail?: string | null;
+  requesterPhone?: string | null;
+  requesterDivision?: string | null;
+  requestType?: string | null;
   members: { user: Member }[];
   categories: { category: { id: string; name: string } }[];
   attachments: TaskAttachment[];
@@ -79,6 +91,7 @@ type Props = {
   createCategory: () => Promise<void>;
   deleteCategory: (categoryId: string) => Promise<void>;
   closeTaskDetail: () => void;
+  printTaskDetail: () => void;
   closeTaskModal: () => void;
   saveTask: () => Promise<void>;
   setListDialogOpen: Dispatch<SetStateAction<boolean>>;
@@ -116,6 +129,7 @@ export function TaskManagementDialogs({
   deleteCategory,
   detailTask,
   closeTaskDetail,
+  printTaskDetail,
   closeTaskModal,
   saveTask,
   setListDialogOpen,
@@ -332,6 +346,67 @@ export function TaskManagementDialogs({
                   />
                 </div>
 
+                <div className="grid grid-cols-1 gap-4 sm:col-span-2 sm:grid-cols-3">
+                  <div>
+                    <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-gray-600 dark:text-gray-300">Pemohon / Divisi</label>
+                    <Input
+                      value={taskForm.requester}
+                      onChange={(e) => setTaskForm((prev) => ({ ...prev, requester: e.target.value }))}
+                      placeholder="Contoh: HRD"
+                      className="h-11 rounded-lg border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-950"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-gray-600 dark:text-gray-300">Prioritas</label>
+                    <Select
+                      value={taskForm.priority || "NONE"}
+                      onValueChange={(value) => setTaskForm((prev) => ({ ...prev, priority: value === "NONE" ? "" : value }))}
+                    >
+                      <SelectTrigger className="h-11 w-full rounded-lg border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-950">
+                        <SelectValue placeholder="Pilih prioritas" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="NONE">Tidak ditentukan</SelectItem>
+                        {TASK_PRIORITIES.map((priority) => (
+                          <SelectItem key={priority.value} value={priority.value}>{priority.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-gray-600 dark:text-gray-300">PIC Pendukung</label>
+                    <Input
+                      value={taskForm.supportPic}
+                      onChange={(e) => setTaskForm((prev) => ({ ...prev, supportPic: e.target.value }))}
+                      placeholder="Contoh: PIC Server / CI-CD"
+                      className="h-11 rounded-lg border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-950"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 sm:col-span-2 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-gray-600 dark:text-gray-300">Tujuan</label>
+                    <textarea
+                      value={taskForm.objective}
+                      onChange={(e) => setTaskForm((prev) => ({ ...prev, objective: e.target.value }))}
+                      rows={3}
+                      className="w-full resize-y rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 dark:border-gray-700 dark:bg-gray-950 dark:text-white dark:focus:ring-blue-950"
+                      placeholder="Satu poin per baris"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-gray-600 dark:text-gray-300">Ruang Lingkup</label>
+                    <textarea
+                      value={taskForm.scope}
+                      onChange={(e) => setTaskForm((prev) => ({ ...prev, scope: e.target.value }))}
+                      rows={3}
+                      className="w-full resize-y rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 dark:border-gray-700 dark:bg-gray-950 dark:text-white dark:focus:ring-blue-950"
+                      placeholder="Satu poin per baris"
+                    />
+                  </div>
+                </div>
+
                 <div className="sm:col-span-2">
                   <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-gray-600 dark:text-gray-300">Kategori</label>
                   <div className="flex flex-wrap gap-2 rounded-xl border border-gray-200 p-3 dark:border-gray-700">
@@ -452,12 +527,19 @@ export function TaskManagementDialogs({
         <DialogContent className="sm:max-w-2xl">
           {detailTask ? (
             <>
-              <DialogHeader>
-                <DialogTitle className="text-xl">{detailTask.title}</DialogTitle>
-                <DialogDescription>
-                  {detailTask.listName}
-                  {detailTask.dueDate ? ` · Due ${formatDate(detailTask.dueDate)}` : ""}
-                </DialogDescription>
+              <DialogHeader className="flex-row items-start justify-between gap-3 space-y-0 pr-8">
+                <div className="min-w-0 space-y-1.5">
+                  <DialogTitle className="text-xl">{detailTask.title}</DialogTitle>
+                  <DialogDescription>
+                    {detailTask.ticketNumber ? `#${detailTask.ticketNumber} · ` : ""}
+                    {detailTask.listName}
+                    {detailTask.dueDate ? ` · Due ${formatDate(detailTask.dueDate)}` : ""}
+                  </DialogDescription>
+                </div>
+                <Button variant="outline" size="sm" onClick={printTaskDetail} className="shrink-0">
+                  <Printer className="h-4 w-4" />
+                  Print
+                </Button>
               </DialogHeader>
 
               <div className="max-h-[70vh] space-y-5 overflow-y-auto pr-1">
@@ -467,6 +549,26 @@ export function TaskManagementDialogs({
                     <p className="whitespace-pre-wrap rounded-lg border border-gray-100 bg-gray-50 p-3 text-sm text-gray-700 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300">
                       {detailTask.description}
                     </p>
+                  </div>
+                )}
+
+                {detailTask.requesterEmail && (
+                  <div>
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Data Pemohon</p>
+                    <dl className="grid grid-cols-1 gap-3 rounded-lg border border-violet-100 bg-violet-50/60 p-3 text-sm dark:border-violet-900/50 dark:bg-violet-950/20 sm:grid-cols-2">
+                      {[
+                        ["Nama", detailTask.requester],
+                        ["Email", detailTask.requesterEmail],
+                        ["Divisi", detailTask.requesterDivision],
+                        ["WhatsApp / Ext.", detailTask.requesterPhone],
+                        ["Jenis Request", detailTask.requestType],
+                      ].map(([label, value]) => (
+                        <div key={label}>
+                          <dt className="text-xs text-gray-500">{label}</dt>
+                          <dd className="break-words text-gray-800 dark:text-gray-200">{value || "-"}</dd>
+                        </div>
+                      ))}
+                    </dl>
                   </div>
                 )}
 

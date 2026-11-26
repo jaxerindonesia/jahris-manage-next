@@ -43,8 +43,8 @@ export async function proxy(request: NextRequest) {
     return response;
   }
 
-  const publicRoutes = ["/login", "/register"];
-  const authApiRoutes = ["/api/auth/login", "/api/auth/register"];
+  const publicRoutes = ["/login", "/register", "/request/"];
+  const authApiRoutes = ["/api/auth/login", "/api/auth/register", "/api/public/"];
   const isPublicRoute = publicRoutes.some((route) => pathname.startsWith(route));
   const isAuthApiRoute = authApiRoutes.some((route) => pathname.startsWith(route));
   const isApiRoute = pathname.startsWith("/api/");
