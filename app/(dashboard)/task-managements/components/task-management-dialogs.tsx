@@ -527,7 +527,7 @@ export function TaskManagementDialogs({
         <DialogContent className="sm:max-w-2xl">
           {detailTask ? (
             <>
-              <DialogHeader className="flex-row items-start justify-between gap-3 space-y-0 pr-8">
+              <DialogHeader className="flex-row items-end justify-between gap-3 space-y-0">
                 <div className="min-w-0 space-y-1.5">
                   <DialogTitle className="text-xl">{detailTask.title}</DialogTitle>
                   <DialogDescription>
@@ -536,7 +536,7 @@ export function TaskManagementDialogs({
                     {detailTask.dueDate ? ` · Due ${formatDate(detailTask.dueDate)}` : ""}
                   </DialogDescription>
                 </div>
-                <Button variant="outline" size="sm" onClick={printTaskDetail} className="shrink-0">
+                <Button variant="outline" size="sm" onClick={printTaskDetail} className="mr-1 shrink-0">
                   <Printer className="h-4 w-4" />
                   Print
                 </Button>

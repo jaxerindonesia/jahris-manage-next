@@ -38,7 +38,7 @@ body{margin:0;font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;co
 .card:last-child{break-after:auto}
 .hd{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #14181F;padding-bottom:2.5mm}
 .org{font-family:ui-monospace,Menlo,monospace;font-size:7.5pt;color:#0F766E;text-transform:uppercase}
-.ttl{font-size:20pt;font-weight:800;line-height:1;margin:1mm 0 0}
+.ttl{font-size:16pt;font-weight:600;letter-spacing:-.2px;line-height:1.1;margin:1mm 0 0}
 .lb{font-size:6.5pt;font-weight:700;letter-spacing:.6px;color:#525B69;text-transform:uppercase}
 .no{border:1.5px solid #14181F;border-radius:6px;height:9mm;width:52mm;display:flex;align-items:center;padding:0 3mm;font-family:ui-monospace,monospace;font-size:11pt;font-weight:700}
 .sec{display:flex;align-items:center;gap:2.5mm;margin-top:1mm}
@@ -53,17 +53,12 @@ body{margin:0;font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;co
 .cb i{width:3.2mm;height:3.2mm;border:1.2px solid #525B69;border-radius:1mm;flex-shrink:0}
 .cb.on{font-weight:700}.cb.on i{background:#14181F;border-color:#14181F}
 .ref{background:#F1F3F6;border-radius:1.5mm;padding:2mm 3mm;font-size:8pt;color:#525B69}
-.tl{display:grid;grid-template-columns:30mm 1fr 1fr;gap:1.2mm 3mm;align-items:end}
-.tl .n{font-size:8.5pt;font-weight:600;padding-bottom:.8mm;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.tl2{display:grid;grid-template-columns:1fr 1fr;gap:6mm}
-.tl.sm{grid-template-columns:19mm 1fr 1fr;gap:1.2mm 2mm}
-.tl.sm .n{font-size:8pt}
-.sig{display:grid;grid-template-columns:repeat(3,1fr);gap:5mm;margin-top:auto;padding-top:4mm}
-.sig div{display:flex;flex-direction:column;gap:12mm}
+.sig{display:grid;grid-template-columns:repeat(3,1fr);gap:5mm;padding-top:6mm}
+.sig div{display:flex;flex-direction:column;gap:16mm}
 .sig small{border-top:1px solid #14181F;padding-top:1mm;font-size:6.5pt;color:#525B69}
 .sig .lead{color:#B45309}
 .warn{background:#FDF3E1;border:1px solid #E8C98A;border-radius:1.5mm;padding:1.8mm 2.5mm;font-size:7pt;color:#7A4A06}
-.ft{display:flex;justify-content:space-between;font-size:6.5pt;color:#525B69}
+.ft{display:flex;justify-content:space-between;font-size:6.5pt;color:#525B69;margin-top:auto}
 .desc{font-size:9.5pt;line-height:1.55;display:flex;flex-direction:column;gap:4mm;flex:1;overflow:hidden}
 .desc p{margin:0;white-space:pre-wrap}
 .desc .h{font-size:10.5pt;font-weight:700;margin-bottom:.6mm}
@@ -120,24 +115,6 @@ function attachmentBlock(attachments: { name: string; url: string; type?: string
     .join("")}</ol></div>`;
 }
 
-const TIMELINE_SINGLE_COLUMN_MAX = 4;
-
-function timelineTable(labels: string[], compact: boolean) {
-  const rows = labels
-    .map((label) => `<span class="n">${escapeHtml(label)}</span><div class="ln"></div><div class="ln"></div>`)
-    .join("");
-  return `<div class="tl${compact ? " sm" : ""}"><span></span><span class="lb">Realisasi</span><span class="lb">Paraf</span>${rows}</div>`;
-}
-
-/** Tahap banyak dibagi dua kolom agar lembar 1 tetap muat di A5. */
-function buildTimeline(data: TaskTicketPrintData) {
-  const labels = data.lists.slice(1).filter((list) => !isRejectedListName(list.name)).map((list) => list.name);
-  if (labels.length <= TIMELINE_SINGLE_COLUMN_MAX) return timelineTable(labels, false);
-
-  const half = Math.ceil(labels.length / 2);
-  return `<div class="tl2">${timelineTable(labels.slice(0, half), true)}${timelineTable(labels.slice(half), true)}</div>`;
-}
-
 /** Target mulai & target selesai (Done) ditampilkan berdampingan dalam satu baris. */
 function buildTimelineTargets(data: TaskTicketPrintData) {
   const stages = data.lists.slice(1).filter((list) => !isRejectedListName(list.name));
@@ -181,9 +158,7 @@ function buildTicketHtml(data: TaskTicketPrintData) {
     ${section(2, "Penanggung Jawab")}
     <div class="g2">${field("PIC", pic)}${field("PIC Pendukung", task.supportPic)}</div>
     ${section(3, "Timeline")}
-    ${buildTimelineTargets(data)}
-    ${buildTimeline(data)}
-    ${section(4, "Status")}
+    ${buildTimelineTargets(data)}    ${section(4, "Status")}
     <div class="cbs">${data.lists.map((list) => checkbox(list.name, false)).join("")}</div>
     <div class="sig">
       <div><span class="lb">Pemohon</span><small>Nama &amp; tanda tangan</small></div>
