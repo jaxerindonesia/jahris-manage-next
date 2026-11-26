@@ -22,6 +22,7 @@ type TaskTicketPrintData = {
     listId: string;
     members: { user: { name: string } }[];
     categories: { category: { id: string } }[];
+    requestType?: string | null;
     attachments?: { name: string; url: string; type?: string | null }[];
   };
   department: { name: string; tenant?: { companyName: string } | null };
@@ -51,8 +52,6 @@ body{margin:0;font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;co
 .cb{display:flex;align-items:center;gap:1.4mm;font-size:8.5pt}
 .cb i{width:3.2mm;height:3.2mm;border:1.2px solid #525B69;border-radius:1mm;flex-shrink:0}
 .cb.on{font-weight:700}.cb.on i{background:#14181F;border-color:#14181F}
-.jp{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5mm}
-.jp .pr .cbs{flex-wrap:nowrap}
 .ref{background:#F1F3F6;border-radius:1.5mm;padding:2mm 3mm;font-size:8pt;color:#525B69}
 .tl{display:grid;grid-template-columns:30mm 1fr 1fr;gap:1.2mm 3mm;align-items:end}
 .tl .n{font-size:8.5pt;font-weight:600;padding-bottom:.8mm;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -152,6 +151,11 @@ function buildTicketHtml(data: TaskTicketPrintData) {
   const organization = [department.name, department.tenant?.companyName].filter(Boolean).join(" · ");
   const ticketNumber = task.ticketNumber ? `#${task.ticketNumber}` : "-";
   const selectedCategoryIds = new Set(task.categories.map((item) => item.category.id));
+  const selectedCategories = data.categories
+    .filter((category) => selectedCategoryIds.has(category.id))
+    .map((category) => category.name)
+    .join(", ");
+  const priorityLabel = TASK_PRIORITIES.find((priority) => priority.value === task.priority)?.label;
   const pic = task.members.map((member) => member.user.name).join(", ");
   const header = (title: string) => `
     <div class="hd">
@@ -169,9 +173,9 @@ function buildTicketHtml(data: TaskTicketPrintData) {
       ${field("Pemohon / Divisi", task.requester)}
       ${field("Divisi Pelaksana", department.name)}
     </div>
-    <div class="jp">
-      <div class="f"><span class="lb">Jenis</span><div class="cbs">${data.categories.length > 0 ? data.categories.map((category) => checkbox(category.name, selectedCategoryIds.has(category.id))).join("") : "-"}</div></div>
-      <div class="f pr"><span class="lb">Prioritas</span><div class="cbs">${TASK_PRIORITIES.map((priority) => checkbox(priority.label, task.priority === priority.value)).join("")}</div></div>
+    <div class="g2">
+      ${field("Jenis", selectedCategories || task.requestType)}
+      ${field("Prioritas", priorityLabel)}
     </div>
     <div class="ref">Deskripsi, tujuan &amp; ruang lingkup lengkap &rarr; <b>Lembar 2</b></div>
     ${section(2, "Penanggung Jawab")}
