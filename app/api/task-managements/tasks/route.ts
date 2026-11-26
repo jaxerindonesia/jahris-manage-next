@@ -7,12 +7,10 @@ import { canManageTaskDepartment } from "@/lib/auth/task-management";
 import { requirePermission } from "@/lib/auth/permission";
 import { writeAuditLog } from "@/lib/security/audit-log";
 import {
+  createWithTicketRetry,
   generateTaskTicketNumber,
-  isTicketNumberConflict,
   readTaskTicketFields,
 } from "@/lib/helper/task-ticket";
-
-const MAX_TICKET_ATTEMPTS = 5;
 
 type AttachmentInput = {
   name: string;
@@ -215,14 +213,7 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    let task: Awaited<ReturnType<typeof createTask>> | null = null;
-    for (let attempt = 1; !task; attempt += 1) {
-      try {
-        task = await createTask();
-      } catch (error) {
-        if (!isTicketNumberConflict(error) || attempt >= MAX_TICKET_ATTEMPTS) throw error;
-      }
-    }
+    const task = await createWithTicketRetry(createTask);
 
     writeAuditLog({
       action: "tasks.create",

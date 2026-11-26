@@ -1,6 +1,7 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 
 export const TASK_PRIORITIES = [
+  { value: "URGENT", label: "Urgent" },
   { value: "HIGH", label: "Tinggi" },
   { value: "MEDIUM", label: "Sedang" },
   { value: "LOW", label: "Rendah" },
@@ -90,4 +91,14 @@ export function readTaskTicketFields(body: Record<string, unknown>) {
   if (body.objective !== undefined) fields.objective = text(body.objective);
   if (body.scope !== undefined) fields.scope = text(body.scope);
   return fields;
+}
+
+export async function createWithTicketRetry<T>(create: () => Promise<T>, maxAttempts = 5) {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await create();
+    } catch (error) {
+      if (!isTicketNumberConflict(error) || attempt >= maxAttempts) throw error;
+    }
+  }
 }
