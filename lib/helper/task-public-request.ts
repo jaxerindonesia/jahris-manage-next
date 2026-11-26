@@ -2,7 +2,7 @@ import { randomBytes } from "crypto";
 import prisma from "@/lib/prisma";
 import { decryptSecret, encryptSecret } from "@/lib/security/secret-box";
 
-export const REQUEST_QUEUE_LIST_NAME = "Antrian Request";
+export const REQUEST_QUEUE_LIST_NAME = "Queue Request";
 export const PUBLIC_REQUEST_SOURCE = "PUBLIC_FORM";
 export const PUBLIC_REQUEST_MAX_FILES = 5;
 export const PUBLIC_REQUEST_OTHER_DIVISION = "Lainnya";

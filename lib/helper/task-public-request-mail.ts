@@ -1,5 +1,5 @@
 import { escapeMailHtml, sendTenantMail } from "@/lib/helper/mailer";
-import { PUBLIC_REQUEST_PRIORITIES } from "@/lib/helper/task-public-request";
+import { PUBLIC_REQUEST_PRIORITIES, REQUEST_QUEUE_LIST_NAME } from "@/lib/helper/task-public-request";
 
 type TaskRequestConfirmation = {
   tenantId: string | null;
@@ -22,7 +22,7 @@ export async function sendTaskRequestConfirmation(input: TaskRequestConfirmation
     ["Judul", input.title],
     ["Jenis Request", input.requestType],
     ["Prioritas", priorityLabel],
-    ["Status", "Antrian Request"],
+    ["Status", REQUEST_QUEUE_LIST_NAME],
   ];
 
   const html = `

@@ -5,9 +5,9 @@ import prisma from "@/lib/prisma";
 import { ensureTenantScope, requireSessionUser } from "@/lib/auth/tenant";
 import { canManageTaskDepartment } from "@/lib/auth/task-management";
 import { requirePermission } from "@/lib/auth/permission";
-import { ensureRequestQueueList } from "@/lib/helper/task-public-request";
+import { REQUEST_QUEUE_LIST_NAME, ensureRequestQueueList } from "@/lib/helper/task-public-request";
 
-const DEFAULT_LISTS = ["Antrian Request", "To Do", "On Progress", "Review", "Done"];
+const DEFAULT_LISTS = [REQUEST_QUEUE_LIST_NAME, "To Do", "On Progress", "Review", "Done"];
 
 async function ensureDepartment(departmentId: string, tenantId: string | null) {
   return prisma.department.findFirst({
